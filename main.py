@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routes import router
+from app.api.router import router
 from app.database.neo4j import verify_connection, driver
 
 app = FastAPI(title="Priora API")
