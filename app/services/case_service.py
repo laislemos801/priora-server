@@ -1,0 +1,21 @@
+from app.database.neo4j import get_session
+from app.repositories.case_repository import (
+    create_case,
+    get_cases_by_user,
+    update_case_uncertainty
+)
+
+
+def create_case_service(user_id, data):
+    with get_session() as tx:
+        return create_case(tx, user_id, data)
+
+
+def get_cases_service(user_id):
+    with get_session() as tx:
+        return get_cases_by_user(tx, user_id)
+
+
+def update_uncertainty_service(caso_id, nova_incerteza):
+    with get_session() as tx:
+        return update_case_uncertainty(tx, caso_id, nova_incerteza)
