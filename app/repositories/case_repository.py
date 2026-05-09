@@ -49,26 +49,34 @@ def get_cases_by_user(tx, user_id):
     OPTIONAL MATCH (c)-[:TEM_EVIDENCIA]->(e:Evidencia)
     WITH c,
          collect(DISTINCT s)[0] AS topSuspeito,
-         count(DISTINCT s)     AS qtdSuspeitos,
-         count(DISTINCT e)     AS qtdEvidencias
+         count(DISTINCT s)      AS qtdSuspeitos,
+         count(DISTINCT e)      AS qtdEvidencias,
+         c.atualizadoEm         AS atualizadoEm
     RETURN DISTINCT
-      c.id AS id,
-      c.nome AS nome,
-      c.descricao AS descricao,
-      c.status AS status,
-      c.prioridade AS prioridade,
-      c.incerteza AS incerteza,
-      c.dataOcorrencia AS dataOcorrencia,
-      c.enderecoCidade AS cidade,
-      c.enderecoEstado AS estado,
-      topSuspeito.nome AS topSuspeitoNome,
+      c.id               AS id,
+      c.nome             AS nome,
+      c.descricao        AS descricao,
+      c.status           AS status,
+      c.prioridade       AS prioridade,
+      c.incerteza        AS incerteza,
+      c.dataOcorrencia   AS dataOcorrencia,
+      c.enderecoCidade   AS cidade,
+      c.enderecoEstado   AS estado,
+      topSuspeito.nome              AS topSuspeitoNome,
       topSuspeito.probabilidadeAtual AS topSuspeitoProbab,
       qtdSuspeitos,
-      qtdEvidencias
-    ORDER BY c.atualizadoEm DESC
+      qtdEvidencias,
+      atualizadoEm
+    ORDER BY atualizadoEm DESC
     """
     result = tx.run(query, userId=user_id)
-    return [record.data() for record in result]
+    return [
+    {
+        **record.data(),
+        "dataOcorrencia": str(record["dataOcorrencia"]) if record["dataOcorrencia"] else None
+    }
+    for record in result
+]
 
 
 def update_case_uncertainty(tx, caso_id, nova_incerteza):
