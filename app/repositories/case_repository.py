@@ -91,3 +91,12 @@ def update_case_uncertainty(tx, caso_id, nova_incerteza):
         novaIncerteza=nova_incerteza
     )
     return result.single()
+
+def get_case_by_id_tx(tx, case_id):
+    query = """
+    MATCH (c:Caso {id: $caseId})
+    RETURN c.id AS id, c.nome AS nome
+    """
+    result = tx.run(query, caseId=case_id)
+    record = result.single()
+    return record.data() if record else None
