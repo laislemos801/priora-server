@@ -8,14 +8,13 @@ class CreateCaseRequest(BaseModel):
     descricao: str
     status: str
     prioridade: str
-
-    enderecoLogradouro: Optional[str] = None
-    enderecoNumero: Optional[str] = None
-    enderecoBairro: Optional[str] = None
-    enderecoCidade: Optional[str] = None
-    enderecoEstado: Optional[str] = None
-
-    dataOcorrencia: str
+    enderecoCep: str | None = None        # ← novo
+    enderecoLogradouro: str | None = None
+    enderecoNumero: str | None = None
+    enderecoBairro: str | None = None
+    enderecoCidade: str | None = None
+    enderecoEstado: str | None = None
+    dataOcorrencia: str | None = None
 
 class UpdateUncertaintyRequest(BaseModel):
     incerteza: float

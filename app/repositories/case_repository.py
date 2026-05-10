@@ -7,6 +7,7 @@ def create_case(tx, user_id, data):
         descricao: $descricao,
         status: $status,
         prioridade: $prioridade,
+        enderecoCep: $cep,
         enderecoLogradouro: $logradouro,
         enderecoNumero: $numero,
         enderecoBairro: $bairro,
@@ -28,6 +29,7 @@ def create_case(tx, user_id, data):
         descricao=data["descricao"],
         status=data["status"],
         prioridade=data["prioridade"],
+        cep=data.get("enderecoCep"),        # ← novo
         logradouro=data.get("enderecoLogradouro"),
         numero=data.get("enderecoNumero"),
         bairro=data.get("enderecoBairro"),
