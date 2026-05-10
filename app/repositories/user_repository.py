@@ -27,11 +27,17 @@ def login_user(tx, email):
     MATCH (u:Usuario {email: $email})
     SET u.ultimoAcesso = datetime()
     RETURN u {
-        .id, .email, .primeiroNome, .sobrenome, .fotoUrl
+        .id,
+        .email,
+        .primeiroNome,
+        .sobrenome,
+        .fotoUrl,
+        .senhaHash
     } AS user
     """
     result = tx.run(query, email=email)
     record = result.single()
+
     return record["user"] if record else None
 
 

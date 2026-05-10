@@ -9,12 +9,12 @@ class CreateUserRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
+    senha: str
 
 
 class RecoverRequest(BaseModel):
     email: EmailStr
-    token: str
 
 
 class ResetPasswordRequest(BaseModel):

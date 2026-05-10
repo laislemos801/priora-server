@@ -28,15 +28,15 @@ def create_user(data: CreateUserRequest):
 
 @router.post("/login")
 def login(data: LoginRequest):
-    return login_user_service(data.email)
+    return login_user_service(
+        data.email,
+        data.senha
+    )
 
 
 @router.post("/recover")
-def recover(data: RecoverRequest):
-    return recovery_token_service(
-        data.email,
-        data.token
-    )
+async def recover(data: RecoverRequest):
+    return await recovery_token_service(data.email)
 
 
 @router.post("/reset-password")
