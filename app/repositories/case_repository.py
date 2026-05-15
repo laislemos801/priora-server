@@ -97,8 +97,47 @@ def update_case_uncertainty(tx, caso_id, nova_incerteza):
 def get_case_by_id_tx(tx, case_id):
     query = """
     MATCH (c:Caso {id: $caseId})
-    RETURN c.id AS id, c.nome AS nome
+
+    OPTIONAL MATCH (u:Usuario)-[:RESPONSAVEL_POR]->(c)
+
+    OPTIONAL MATCH (c)-[:TEM_SUSPEITO]->(s:Suspeito)
+    WITH c, u, count(DISTINCT s) AS totalSuspeitos
+
+    OPTIONAL MATCH (c)-[:TEM_EVIDENCIA]->(e:Evidencia)
+    WITH c, u, totalSuspeitos,
+         count(DISTINCT e) AS totalEvidencias
+
+    RETURN c {
+        .id,
+        .nome,
+        .descricao,
+        .status,
+        .prioridade,
+        .enderecoCep,
+        .enderecoLogradouro,
+        .enderecoNumero,
+        .enderecoBairro,
+        .enderecoCidade,
+        .enderecoEstado,
+        .incerteza,
+
+        dataOcorrencia: toString(c.dataOcorrencia),
+        criadoEm: toString(c.criadoEm),
+        atualizadoEm: toString(c.atualizadoEm),
+
+        totalSuspeitos: totalSuspeitos,
+        totalEvidencias: totalEvidencias,
+
+        responsavel: u {
+            .id,
+            .primeiroNome,
+            .sobrenome,
+            .email
+        }
+    } AS caso
     """
+
     result = tx.run(query, caseId=case_id)
     record = result.single()
-    return record.data() if record else None
+
+    return record["caso"] if record else None
