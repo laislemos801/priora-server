@@ -18,3 +18,18 @@ class CreateCaseRequest(BaseModel):
 
 class UpdateUncertaintyRequest(BaseModel):
     incerteza: float
+
+class UpdateCaseRequest(BaseModel):
+    nome: str
+    descricao: str
+    status: str
+    prioridade: str
+
+    enderecoCep: Optional[str] = None
+    enderecoLogradouro: Optional[str] = None
+    enderecoNumero: Optional[str] = None
+    enderecoBairro: Optional[str] = None
+    enderecoCidade: Optional[str] = None
+    enderecoEstado: Optional[str] = None
+
+    dataOcorrencia: str
