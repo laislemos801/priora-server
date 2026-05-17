@@ -30,3 +30,17 @@ class CreateSuspectRequest(BaseModel):
 
     crimeSimilarAntes: RespostaHistorico
     histDescumprimento: RespostaHistorico
+
+class UpdateSuspectRequest(BaseModel):
+    nome: str
+    idade: Optional[int] = None
+    fotoUrl: Optional[str] = None
+
+    comportamento: float
+    agressividade: float
+    proximidade: float
+    conexoesSociais: float
+    nivelConfissao: float
+
+    crimeSimilarAntes: str
+    histDescumprimento: str
