@@ -29,7 +29,7 @@ def create_case(tx, user_id, data):
         descricao=data["descricao"],
         status=data["status"],
         prioridade=data["prioridade"],
-        cep=data.get("enderecoCep"),        # ← novo
+        cep=data.get("enderecoCep"),      
         logradouro=data.get("enderecoLogradouro"),
         numero=data.get("enderecoNumero"),
         bairro=data.get("enderecoBairro"),
@@ -45,15 +45,22 @@ def get_cases_by_user(tx, user_id):
     MATCH (u:Usuario {id: $userId})
     OPTIONAL MATCH (u)-[:RESPONSAVEL_POR]->(c1:Caso)
     OPTIONAL MATCH (u)-[:TEM_ACESSO {status: 'Ativo'}]->(c2:Caso)
+
     WITH collect(c1) + collect(c2) AS todos
     UNWIND todos AS c
+    WITH c
+    WHERE c IS NOT NULL
+
     OPTIONAL MATCH (c)-[:TEM_SUSPEITO]->(s:Suspeito)
     OPTIONAL MATCH (c)-[:TEM_EVIDENCIA]->(e:Evidencia)
-    WITH c,
+    OPTIONAL MATCH (resp:Usuario)-[:RESPONSAVEL_POR]->(c)
+
+    WITH c, resp,
          collect(DISTINCT s)[0] AS topSuspeito,
          count(DISTINCT s)      AS qtdSuspeitos,
          count(DISTINCT e)      AS qtdEvidencias,
          c.atualizadoEm         AS atualizadoEm
+
     RETURN DISTINCT
       c.id               AS id,
       c.nome             AS nome,
@@ -64,21 +71,25 @@ def get_cases_by_user(tx, user_id):
       c.dataOcorrencia   AS dataOcorrencia,
       c.enderecoCidade   AS cidade,
       c.enderecoEstado   AS estado,
-      topSuspeito.nome              AS topSuspeitoNome,
+      resp.primeiroNome  AS responsavelPrimeiroNome,
+      resp.sobrenome     AS responsavelSobrenome,
+      topSuspeito.nome   AS topSuspeitoNome,
       topSuspeito.probabilidadeAtual AS topSuspeitoProbab,
       qtdSuspeitos,
       qtdEvidencias,
       atualizadoEm
     ORDER BY atualizadoEm DESC
     """
+
     result = tx.run(query, userId=user_id)
+
     return [
-    {
-        **record.data(),
-        "dataOcorrencia": str(record["dataOcorrencia"]) if record["dataOcorrencia"] else None
-    }
-    for record in result
-]
+        {
+            **record.data(),
+            "dataOcorrencia": str(record["dataOcorrencia"]) if record["dataOcorrencia"] else None
+        }
+        for record in result
+    ]
 
 
 def update_case_uncertainty(tx, caso_id, nova_incerteza):
@@ -141,3 +152,59 @@ def get_case_by_id_tx(tx, case_id):
     record = result.single()
 
     return record["caso"] if record else None
+
+def update_case(tx, caso_id, data):
+    query = """
+    MATCH (c:Caso {id: $casoId})
+    SET c.nome = $nome,
+        c.descricao = $descricao,
+        c.status = $status,
+        c.prioridade = $prioridade,
+        c.enderecoCep = $enderecoCep,
+        c.enderecoLogradouro = $enderecoLogradouro,
+        c.enderecoNumero = $enderecoNumero,
+        c.enderecoBairro = $enderecoBairro,
+        c.enderecoCidade = $enderecoCidade,
+        c.enderecoEstado = $enderecoEstado,
+        c.dataOcorrencia = date($dataOcorrencia),
+        c.atualizadoEm = datetime()
+    RETURN c {
+        .id, .nome, .descricao, .status, .prioridade,
+        .enderecoCep, .enderecoLogradouro, .enderecoNumero,
+        .enderecoBairro, .enderecoCidade, .enderecoEstado,
+        dataOcorrencia: toString(c.dataOcorrencia),
+        atualizadoEm: toString(c.atualizadoEm)
+    } AS caso
+    """
+    result = tx.run(query, casoId=caso_id, **data)
+    record = result.single()
+
+    if not record:
+        raise Exception("Caso não encontrado")
+
+    return record["caso"]
+
+def delete_case(tx, caso_id):
+    query = """
+    MATCH (c:Caso {id: $casoId})
+
+    OPTIONAL MATCH (c)-[r]-()
+    DELETE r
+
+    WITH c
+
+    DELETE c
+
+    RETURN $casoId AS casoId
+    """
+
+    result = tx.run(query, casoId=caso_id)
+    record = result.single()
+
+    if not record:
+        raise Exception("Caso não encontrado")
+
+    return {
+        "deleted": True,
+        "casoId": caso_id
+    }
