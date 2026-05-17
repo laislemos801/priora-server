@@ -22,13 +22,18 @@ class StatusEvidencia(str, Enum):
 
 class CreateEvidenceRequest(BaseModel):
     casoId: str
-    suspeitoId: str
+    suspeitoIds: list[str] 
 
     nome: str = Field(..., example="Digital no local")
     tipo: TipoEvidencia
+    status: StatusEvidencia = StatusEvidencia.Coletada 
     descricao: str | None = None
 
     dataColeta: str = Field(..., example="2025-04-24")
 
     peso: float = Field(..., ge=0.0, le=1.0, example=0.5)
     pesoVinculo: float = Field(..., ge=0.0, le=1.0, example=0.75)
+
+
+class DeleteEvidencesRequest(BaseModel):
+    ids: list[str]
