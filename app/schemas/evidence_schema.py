@@ -37,3 +37,14 @@ class CreateEvidenceRequest(BaseModel):
 
 class DeleteEvidencesRequest(BaseModel):
     ids: list[str]
+
+
+class UpdateEvidenceRequest(BaseModel):
+    nome: str | None = None
+    tipo: TipoEvidencia | None = None
+    status: StatusEvidencia | None = None
+    descricao: str | None = None
+    dataColeta: str | None = None
+    peso: float | None = Field(default=None, ge=0.0, le=1.0)
+    pesoVinculo: float | None = Field(default=None, ge=0.0, le=1.0)
+    suspeitoIds: list[str] | None = None
