@@ -17,7 +17,7 @@ def create_evidence(tx, data):
     UNWIND $suspeitoIds AS suspeitoId
     MATCH (s:Suspeito {id: suspeitoId})
     CREATE (e)-[:VINCULA {
-      pesoCondicional: $pesoVinculo,
+      pesoVinculo: $pesoVinculo,
       vinculadoEm: datetime()
     }]->(s)
     RETURN e { .id, .nome, .tipo, .status, .pesoCondicional } AS evidencia

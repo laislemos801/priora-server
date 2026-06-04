@@ -12,9 +12,9 @@ def generate_analysis(tx, data):
 
     UNWIND suspeitos AS s
 
-    OPTIONAL MATCH (s)<-[v:VINCULA]-(:Evidencia)
+    OPTIONAL MATCH (e:Evidencia)-[v:VINCULA]->(s)
     WITH c, s, nSuspeitos, novaVersao,
-         collect(v.pesoCondicional) AS pesos
+        collect(e.pesoCondicional * coalesce(v.pesoCondicional, 1.0)) AS pesos
 
     WITH c, s, nSuspeitos, novaVersao, pesos,
          CASE
@@ -146,3 +146,65 @@ def get_suspect_history(tx, suspeito_id):
 
     result = tx.run(query, suspeitoId=suspeito_id)
     return [record.data() for record in result]
+
+
+def get_suspect_analysis(tx, caso_id, suspeito_id):
+    query = """
+    MATCH (c:Caso {id: $casoId})-[:TEM_SUSPEITO]->(s:Suspeito {id: $suspeitoId})
+
+    OPTIONAL MATCH (e:Evidencia)-[v:VINCULA]->(s)
+
+    WITH s, collect(
+        CASE
+            WHEN e IS NOT NULL THEN {
+                id: e.id,
+                nome: e.nome,
+                tipo: e.tipo,
+                status: e.status,
+
+                // valor utilizado no cálculo bayesiano
+                pesoCondicional: e.pesoCondicional * coalesce(v.pesoCondicional, 1.0),
+
+                // valor original da evidência
+                pesoEvidencia: e.pesoCondicional,
+
+                // valor original do vínculo
+                pesoVinculo: coalesce(v.pesoCondicional, 1.0),
+
+                dataColeta: toString(e.dataColeta),
+                descricao: e.descricao
+            }
+            ELSE NULL
+        END
+    ) AS todasEvidencias
+
+    WITH s, [ev IN todasEvidencias WHERE ev IS NOT NULL] AS evidencias
+
+    MATCH (c:Caso {id: $casoId})-[:TEM_SUSPEITO]->(todos:Suspeito)
+
+    WITH s, evidencias, count(todos) AS nSuspeitos
+
+    RETURN {
+        id: s.id,
+        nome: s.nome,
+        fotoUrl: s.fotoUrl,
+        probabilidadeAtual: s.probabilidadeAtual,
+        posicaoRanking: s.posicaoRanking,
+        tendencia: s.tendencia,
+        nSuspeitos: nSuspeitos,
+        evidencias: evidencias
+    } AS resultado
+    """
+
+    result = tx.run(
+        query,
+        casoId=caso_id,
+        suspeitoId=suspeito_id
+    )
+
+    record = result.single()
+
+    if not record:
+        raise Exception("Suspeito não encontrado")
+
+    return record["resultado"]

@@ -57,56 +57,43 @@ def get_evidences_for_bayes(tx, caso_id):
     OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
     WITH e, collect({
         suspectId: s.id,
-        peso: v.pesoCondicional
+        pesoVinculo: v.pesoCondicional
     }) AS vinculos
-
     RETURN e {
-        .id,
-        .nome,
-        .tipo,
-        .status,
-        .pesoCondicional,
-        .dataColeta,
-        .descricao
+        .id, .nome, .tipo, .status,
+        .pesoCondicional, .dataColeta, .descricao
     } AS evidencia,
     vinculos
     ORDER BY e.criadoEm ASC
     """
 
     result = tx.run(query, casoId=caso_id)
-
     evidences = []
 
     for record in result:
         e = record["evidencia"]
         vinculos = record["vinculos"]
+        peso_evidencia = float(e.get("pesoCondicional") or 0.5)
 
-        suspect_ids = [
-            v["suspectId"]
-            for v in vinculos
-            if v["suspectId"] is not None
-        ]
-
-        peso_vinculo = None
         for v in vinculos:
-            if v["peso"] is not None:
-                peso_vinculo = v["peso"]
-                break
+            if v["suspectId"] is None:
+                continue
 
-        weight = peso_vinculo or e.get("pesoCondicional") or 0.5
+            peso_vinculo = float(v["pesoVinculo"] or 1.0)
+            peso_final   = peso_evidencia * peso_vinculo
 
-        evidences.append(
-            Evidence(
-                id=e["id"],
-                name=e["nome"],
-                type=EvidenceType(e["tipo"]),
-                status=EvidenceStatus(e["status"]),
-                weight=float(weight),
-                suspect_ids=suspect_ids,
-                date=str(e["dataColeta"]) if e.get("dataColeta") else "",
-                description=e.get("descricao") or "",
+            evidences.append(
+                Evidence(
+                    id=f"{e['id']}_{v['suspectId']}",
+                    name=e["nome"],
+                    type=EvidenceType(e["tipo"]),
+                    status=EvidenceStatus(e["status"]),
+                    weight=peso_final,
+                    suspect_ids=[v["suspectId"]],
+                    date=str(e["dataColeta"]) if e.get("dataColeta") else "",
+                    description=e.get("descricao") or "",
+                )
             )
-        )
 
     return evidences
 
