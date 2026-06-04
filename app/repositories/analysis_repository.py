@@ -14,7 +14,7 @@ def generate_analysis(tx, data):
 
     OPTIONAL MATCH (e:Evidencia)-[v:VINCULA]->(s)
     WITH c, s, nSuspeitos, novaVersao,
-        collect(e.pesoCondicional * coalesce(v.pesoCondicional, 1.0)) AS pesos
+        collect(e.pesoCondicional * coalesce(v.pesoVinculo, 1.0)) AS pesos
 
     WITH c, s, nSuspeitos, novaVersao, pesos,
          CASE
@@ -163,13 +163,13 @@ def get_suspect_analysis(tx, caso_id, suspeito_id):
                 status: e.status,
 
                 // valor utilizado no cálculo bayesiano
-                pesoCondicional: e.pesoCondicional * coalesce(v.pesoCondicional, 1.0),
+                pesoCondicional: e.pesoCondicional * coalesce(v.pesoVinculo, 1.0),
 
                 // valor original da evidência
                 pesoEvidencia: e.pesoCondicional,
 
                 // valor original do vínculo
-                pesoVinculo: coalesce(v.pesoCondicional, 1.0),
+                pesoVinculo: coalesce(v.pesoVinculo, 1.0),
 
                 dataColeta: toString(e.dataColeta),
                 descricao: e.descricao

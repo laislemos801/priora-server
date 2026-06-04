@@ -74,7 +74,7 @@ def get_evidence_by_id(tx, evidence_id: str):
     MATCH (e:Evidencia {id: $evidenceId})
     OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
     WITH e, collect(s { .id, .nome }) AS suspeitos,
-         collect(v.pesoCondicional)[0] AS pesoVinculo
+        collect(v.pesoVinculo)[0] AS pesoVinculo
     RETURN e {
       .id, .nome, .tipo, .status, .descricao,
       .pesoCondicional, .dataColeta
@@ -150,7 +150,7 @@ def update_evidence(tx, evidence_id: str, data: dict):
     UNWIND $suspeitoIds AS sid
     MATCH (s:Suspeito {id: sid})
     CREATE (e)-[:VINCULA {
-        pesoCondicional: $pesoVinculo,
+        pesoVinculo: $pesoVinculo,
         vinculadoEm: datetime()
     }]->(s)
         """

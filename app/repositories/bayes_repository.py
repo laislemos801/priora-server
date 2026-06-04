@@ -57,7 +57,7 @@ def get_evidences_for_bayes(tx, caso_id):
     OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
     WITH e, collect({
         suspectId: s.id,
-        pesoVinculo: v.pesoCondicional
+        pesoVinculo: v.pesoVinculo
     }) AS vinculos
     RETURN e {
         .id, .nome, .tipo, .status,
