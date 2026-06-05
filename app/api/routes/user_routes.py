@@ -3,7 +3,8 @@ from app.services.user_service import (
     create_user_service,
     login_user_service,
     recovery_token_service,
-    reset_password_service
+    reset_password_service,
+    check_email_service  
 )
 
 from app.schemas.user_schema import (
@@ -45,3 +46,7 @@ def reset_password(data: ResetPasswordRequest):
         data.token,
         data.novaSenha
     )
+
+@router.get("/check-email")
+def check_email(email: str):
+    return check_email_service(email)
