@@ -6,7 +6,8 @@ from app.repositories.user_repository import (
     create_user,
     login_user,
     set_recovery_token,
-    reset_password
+    reset_password,
+    check_email_exists 
 )
 import bcrypt
 import secrets
@@ -77,3 +78,8 @@ def reset_password_service(token, nova_senha):
 
     with get_session() as tx:
         return reset_password(tx, token, nova_hash)
+
+def check_email_service(email):
+    with get_session() as tx:
+        exists = check_email_exists(tx, email)
+    return {"exists": exists}

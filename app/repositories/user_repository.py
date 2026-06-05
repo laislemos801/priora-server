@@ -63,3 +63,12 @@ def reset_password(tx, token, nova_senha_hash):
     """
     result = tx.run(query, token=token, novaSenhaHash=nova_senha_hash)
     return result.single()
+
+
+def check_email_exists(tx, email):
+    query = """
+    MATCH (u:Usuario {email: $email})
+    RETURN u.email AS email
+    """
+    result = tx.run(query, email=email)
+    return result.single() is not None
