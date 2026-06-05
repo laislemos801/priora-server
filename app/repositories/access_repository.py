@@ -1,0 +1,144 @@
+def invite_user_to_case(tx, email, caso_id, papel, user_id):
+    query = """
+    MATCH (sender:Usuario {id: $userId})
+    MATCH (u:Usuario {email: $email})
+    MATCH (c:Caso {id: $casoId})
+
+    OPTIONAL MATCH (sender)-[:RESPONSAVEL_POR]->(c)
+    OPTIONAL MATCH (sender)-[senderAccess:TEM_ACESSO]->(c)
+
+    WITH sender, u, c, senderAccess
+    WHERE sender.id <> u.id
+
+    MERGE (u)-[r:TEM_ACESSO]->(c)
+    ON CREATE SET
+        r.papel = $papel,
+        r.status = 'Pendente',
+        r.convidadoEm = datetime()
+    ON MATCH SET
+        r.papel = $papel
+
+    RETURN u {
+        .id, .email, .primeiroNome, .sobrenome
+    } AS usuario,
+    r.papel AS papel,
+    r.status AS status
+    """
+
+    result = tx.run(
+        query,
+        email=email,
+        casoId=caso_id,
+        papel=papel,
+        userId=user_id
+    )
+
+    record = result.single()
+
+    if not record:
+        raise Exception("Usuário não encontrado ou convite inválido")
+
+    return record.data()
+
+
+def accept_invite(tx, user_id, caso_id):
+    query = """
+    MATCH (u:Usuario {id: $userId})-[r:TEM_ACESSO]->(c:Caso {id: $casoId})
+    SET r.status = 'Ativo'
+    RETURN c.id AS casoId, r.status AS status
+    """
+    result = tx.run(query,
+        userId=user_id,
+        casoId=caso_id
+    )
+    record = result.single()
+    if not record:
+        raise Exception("Convite não encontrado")
+    return record.data()
+
+
+def list_case_users(tx, caso_id):
+    query = """
+    MATCH (c:Caso {id: $casoId})
+
+    OPTIONAL MATCH (owner:Usuario)-[:RESPONSAVEL_POR]->(c)
+    OPTIONAL MATCH (u:Usuario)-[r:TEM_ACESSO]->(c)
+
+    WITH
+      collect(DISTINCT {
+        usuario: owner {
+          .id, .email, .primeiroNome, .sobrenome
+        },
+        papel: 'Editor',
+        status: 'Ativo',
+        tipo: 'Responsavel'
+      }) +
+      collect(DISTINCT {
+        usuario: u {
+          .id, .email, .primeiroNome, .sobrenome
+        },
+        papel: r.papel,
+        status: r.status,
+        tipo: 'Colaborador'
+      }) AS acessos
+
+    UNWIND acessos AS acesso
+    WITH acesso
+    WHERE acesso.usuario.id IS NOT NULL
+
+    RETURN acesso.usuario AS usuario,
+           acesso.papel AS papel,
+           acesso.status AS status,
+           acesso.tipo AS tipo
+    """
+    result = tx.run(query, casoId=caso_id)
+    return [record.data() for record in result]
+
+
+def update_case_access(tx, caso_id, user_id, papel):
+    query = """
+    MATCH (u:Usuario {id: $userId})-[r:TEM_ACESSO]->(c:Caso {id: $casoId})
+    SET r.papel = $papel
+    RETURN u {
+        .id, .email, .primeiroNome, .sobrenome
+    } AS usuario,
+    r.papel AS papel,
+    r.status AS status
+    """
+    result = tx.run(
+        query,
+        casoId=caso_id,
+        userId=user_id,
+        papel=papel
+    )
+
+    record = result.single()
+
+    if not record:
+        raise Exception("Acesso não encontrado")
+
+    return record.data()
+
+
+def delete_case_access(tx, caso_id, user_id):
+    query = """
+    MATCH (u:Usuario {id: $userId})-[r:TEM_ACESSO]->(c:Caso {id: $casoId})
+    DELETE r
+    RETURN u.id AS userId, c.id AS casoId
+    """
+    result = tx.run(
+        query,
+        casoId=caso_id,
+        userId=user_id
+    )
+
+    record = result.single()
+
+    if not record:
+        raise Exception("Acesso não encontrado")
+
+    return {
+        "deleted": True,
+        "userId": record["userId"],
+        "casoId": record["casoId"]
+    }

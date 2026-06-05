@@ -100,19 +100,8 @@ NEO4J_PASSWORD=test123
 
 ## 🐳 Banco de Dados (Neo4j)
 
-Subir o banco com Docker:
 
-```bash
-docker-compose up -d
-```
-
-Acesse:
-
-http://localhost:7474
-
----
-
-## ▶️ Rodar o servidor
+### ▶️ Rodar o servidor
 
 ```bash
 uvicorn main:app --reload
@@ -125,10 +114,9 @@ http://localhost:8000/docs
 
 ---
 
-## ⚠️ Importante
+### ⚠️ Importante
 
 * Sempre ative o ambiente virtual antes de rodar o projeto
-* Certifique-se de que o Docker está rodando
 
 ---
 
