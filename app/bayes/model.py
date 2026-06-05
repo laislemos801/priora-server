@@ -170,13 +170,13 @@ class BayesianNetwork:
     # ──────────────────────────────────────────────────────────────
 
     def run(
-    self,
-    case_id: str,
-    suspects: List[Suspect],
-    evidences: List[Evidence],
-    version: int = 2,
-    previous_results: Optional[List[SuspectResult]] = None,
-) -> BayesianAnalysisResult:
+      self,
+      case_id: str,
+      suspects: List[Suspect],
+      evidences: List[Evidence],
+      version: int = 2,
+      previous_results: Optional[List[SuspectResult]] = None,
+    ) -> BayesianAnalysisResult:
 
         if not suspects:
             raise ValueError("A lista de suspeitos não pode estar vazia.")
@@ -215,11 +215,13 @@ class BayesianNetwork:
 
             trend = self._compute_trend(suspect.id, pct, prev_index)
 
+            bayes_numerator = math.exp(log_score) * prior
+
             results.append(SuspectResult(
                 suspect=suspect,
                 prior=prior,
                 p_e_given_h=math.exp(log_score),
-                numerator=weight,
+                numerator=bayes_numerator,
                 p_h_given_e=posterior,
                 probability_pct=pct,
                 uncertainty_pct=uncertainty,

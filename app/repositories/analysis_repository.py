@@ -1,123 +1,27 @@
+from app.bayes.model import (
+    BayesianNetwork,
+    Suspect,
+    Evidence,
+    EvidenceType,
+    EvidenceStatus,
+)
+
 def generate_analysis(tx, data):
-    query = """
-    MATCH (c:Caso {id: $casoId})
-    MATCH (c)-[:TEM_SUSPEITO]->(s:Suspeito)
 
-    WITH c, collect(s) AS suspeitos
-    WITH c, suspeitos, size(suspeitos) AS nSuspeitos
-    WHERE nSuspeitos > 0
+    caso_id = data["casoId"]
+    user_id = data["userId"]
 
-    OPTIONAL MATCH (c)-[:TEM_ANALISE]->(old:AnaliseProb)
-    WITH c, suspeitos, nSuspeitos, coalesce(max(old.versao), 0) + 1 AS novaVersao
+    suspects_raw = load_suspects(tx, caso_id)
 
-    UNWIND suspeitos AS s
+    evidences_raw = load_evidences(tx, caso_id)
 
-    OPTIONAL MATCH (e:Evidencia)-[v:VINCULA]->(s)
-    WITH c, s, nSuspeitos, novaVersao,
-        collect(e.pesoCondicional * coalesce(v.pesoVinculo, 1.0)) AS pesos
+    result = build_analysis(
+        caso_id,
+        suspects_raw,
+        evidences_raw,
+    )
 
-    WITH c, s, nSuspeitos, novaVersao, pesos,
-         CASE
-           WHEN size(pesos) = 0 THEN null
-           ELSE reduce(acc = 1.0, p IN pesos | acc * p)
-         END AS pEH
-
-    WITH c, s, nSuspeitos, novaVersao, pesos, pEH,
-         1.0 / toFloat(nSuspeitos) AS pH,
-         1.0 - (1.0 / toFloat(nSuspeitos)) AS pNaoH
-
-    WITH c, s, nSuspeitos, novaVersao, pesos, pEH, pH, pNaoH,
-         CASE
-           WHEN size(pesos) = 0 THEN null
-           ELSE 1.0 - pEH
-         END AS pENaoH
-
-    WITH c, s, nSuspeitos, novaVersao, pesos, pEH, pH, pNaoH, pENaoH,
-         CASE
-           WHEN size(pesos) = 0 THEN null
-           ELSE pEH * pH
-         END AS num,
-         CASE
-           WHEN size(pesos) = 0 THEN null
-           ELSE (pEH * pH) + (pENaoH * pNaoH)
-         END AS den
-
-    WITH c, s, novaVersao, pesos, pH, pEH, pENaoH, num, den,
-         CASE
-           WHEN size(pesos) = 0 THEN pH
-           WHEN den = 0 THEN 0.0
-           ELSE num / den
-         END AS pHE
-
-    CREATE (a:AnaliseProb {
-        id: randomUUID(),
-        versao: novaVersao,
-        pHipotese: pH,
-        pEvidenciaDadoH: coalesce(pEH, 0.0),
-        pEvidenciaDadoNaoH: coalesce(pENaoH, 0.0),
-        numerador: coalesce(num, 0.0),
-        denominador: coalesce(den, 0.0),
-        pHdadoE: pHE,
-        incerteza: 100.0 - (pHE * 100.0),
-        geradaEm: datetime(),
-        geradaPorId: $userId
-    })
-
-    CREATE (c)-[:TEM_ANALISE {geradaEm: datetime()}]->(a)
-
-    CREATE (a)-[:AVALIA {
-        probabilidade: pHE,
-        posicao: null
-    }]->(s)
-
-    CREATE (s)-[:HISTORICO_EM {
-        probabilidadeNaEpoca: pHE,
-        dataSnapshot: datetime()
-    }]->(a)
-
-    SET s.probabilidadeAtual = pHE * 100.0,
-        s.atualizadoEm = datetime()
-
-    WITH DISTINCT c, novaVersao
-
-    MATCH (c)-[:TEM_SUSPEITO]->(ranked:Suspeito)
-    WITH c, novaVersao, ranked
-    ORDER BY ranked.probabilidadeAtual DESC
-
-    WITH c, novaVersao, collect(ranked) AS ranking
-    UNWIND range(0, size(ranking)-1) AS i
-    WITH c, novaVersao, ranking[i] AS s, i + 1 AS pos
-
-    SET s.posicaoRanking = pos,
-        s.atualizadoEm = datetime()
-
-    WITH c, novaVersao, collect({
-        id: s.id,
-        nome: s.nome,
-        probabilidadeAtual: s.probabilidadeAtual,
-        posicaoRanking: s.posicaoRanking
-    }) AS rankingFinal
-
-    WITH c, novaVersao, rankingFinal,
-         reduce(total = 0.0, item IN rankingFinal | total + item.probabilidadeAtual) / size(rankingFinal) AS mediaProbabilidade
-
-    SET c.incerteza = 100.0 - mediaProbabilidade,
-        c.atualizadoEm = datetime()
-
-    RETURN {
-        versao: novaVersao,
-        incertezaCaso: c.incerteza,
-        ranking: rankingFinal
-    } AS resultado
-    """
-
-    result = tx.run(query, **data)
-    record = result.single()
-
-    if not record:
-        raise Exception("Caso não encontrado ou sem suspeitos")
-
-    return record["resultado"]
+    return result.to_dict()
 
 
 def get_case_uncertainty_evolution(tx, caso_id):
@@ -149,27 +53,26 @@ def get_suspect_history(tx, suspeito_id):
 
 
 def get_suspect_analysis(tx, caso_id, suspeito_id):
+    
     query = """
     MATCH (c:Caso {id: $casoId})-[:TEM_SUSPEITO]->(s:Suspeito {id: $suspeitoId})
 
     OPTIONAL MATCH (e:Evidencia)-[v:VINCULA]->(s)
 
-    WITH s, collect(
+    WITH c, s, collect(
         CASE
-            WHEN e IS NOT NULL THEN {
+           WHEN e IS NOT NULL THEN {
                 id: e.id,
                 nome: e.nome,
                 tipo: e.tipo,
                 status: e.status,
 
-                // valor utilizado no cálculo bayesiano
-                pesoCondicional: e.pesoCondicional * coalesce(v.pesoVinculo, 1.0),
-
-                // valor original da evidência
-                pesoEvidencia: e.pesoCondicional,
-
-                // valor original do vínculo
+                pesoCondicional: e.pesoCondicional,
                 pesoVinculo: coalesce(v.pesoVinculo, 1.0),
+
+                pesoFinal:
+                    e.pesoCondicional *
+                    coalesce(v.pesoVinculo, 1.0),
 
                 dataColeta: toString(e.dataColeta),
                 descricao: e.descricao
@@ -178,11 +81,15 @@ def get_suspect_analysis(tx, caso_id, suspeito_id):
         END
     ) AS todasEvidencias
 
-    WITH s, [ev IN todasEvidencias WHERE ev IS NOT NULL] AS evidencias
+    WITH c, s,
+        [ev IN todasEvidencias WHERE ev IS NOT NULL] AS evidencias
 
-    MATCH (c:Caso {id: $casoId})-[:TEM_SUSPEITO]->(todos:Suspeito)
+    MATCH (c)-[:TEM_SUSPEITO]->(todos:Suspeito)
 
-    WITH s, evidencias, count(todos) AS nSuspeitos
+    WITH
+        s,
+        evidencias,
+        count(todos) AS nSuspeitos
 
     RETURN {
         id: s.id,
@@ -193,18 +100,134 @@ def get_suspect_analysis(tx, caso_id, suspeito_id):
         tendencia: s.tendencia,
         nSuspeitos: nSuspeitos,
         evidencias: evidencias
-    } AS resultado
+    } AS suspeito
     """
 
-    result = tx.run(
+    record = tx.run(
         query,
         casoId=caso_id,
         suspeitoId=suspeito_id
-    )
-
-    record = result.single()
+    ).single()
 
     if not record:
         raise Exception("Suspeito não encontrado")
 
-    return record["resultado"]
+    suspeito = record["suspeito"]
+
+    # executa o mesmo modelo bayesiano usado na análise
+    suspects_raw = load_suspects(tx, caso_id)
+    evidences_raw = load_evidences(tx, caso_id)
+
+    analysis = build_analysis(
+        caso_id,
+        suspects_raw,
+        evidences_raw
+    )
+
+    # encontra o resultado do suspeito dentro do ranking
+    bayes = next(
+        (
+            r for r in analysis.ranking
+            if r.suspect.id == suspeito_id
+        ),
+        None
+    )
+
+    if not bayes:
+        raise Exception("Resultado bayesiano não encontrado")
+    
+    denominator = sum(r.numerator for r in analysis.ranking)
+
+    suspeito["bayes"] = {
+        "prior": round(bayes.prior, 6),
+        "pEH": round(bayes.p_e_given_h, 6),
+        "numerator": round(bayes.numerator, 6),
+        "denominator": round(denominator, 6),
+        "posterior": round(bayes.p_h_given_e, 6),
+        "probabilityPct": round(bayes.probability_pct, 2),
+        "uncertaintyPct": round(bayes.uncertainty_pct, 2),
+        "position": bayes.position
+    }
+
+    return suspeito
+
+def load_suspects(tx, caso_id):
+    query = """
+    MATCH (:Caso {id:$casoId})-[:TEM_SUSPEITO]->(s:Suspeito)
+
+    RETURN
+        s.id AS id,
+        s.nome AS nome,
+        s.idade AS idade,
+        s.fotoUrl AS fotoUrl
+    """
+
+    result = tx.run(query, casoId=caso_id)
+
+    return [r.data() for r in result]
+
+
+def load_evidences(tx, caso_id):
+    query = """
+    MATCH (:Caso {id:$casoId})-[:TEM_EVIDENCIA]->(e:Evidencia)
+
+    OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
+
+    RETURN
+        e.id AS id,
+        e.nome AS nome,
+        e.tipo AS tipo,
+        e.status AS status,
+        e.pesoCondicional AS peso,
+        v.pesoVinculo AS pesoVinculo,
+        collect(s.id) AS suspectIds,
+        toString(e.dataColeta) AS dataColeta,
+        e.descricao AS descricao
+    """
+
+    result = tx.run(query, casoId=caso_id)
+
+    return [r.data() for r in result]
+
+
+def build_analysis(caso_id, suspects_raw, evidences_raw):
+
+    suspects = [
+        Suspect(
+            id=s["id"],
+            name=s["nome"],
+            age=s.get("idade", 0),
+            photo_url=s.get("fotoUrl"),
+        )
+        for s in suspects_raw
+    ]
+
+    evidences = [
+        Evidence(
+            id=e["id"],
+            name=e["nome"],
+            type=EvidenceType(e["tipo"]),
+            status=EvidenceStatus(e["status"]),
+            weight=e["peso"] * e["pesoVinculo"],
+            suspect_ids=e["suspectIds"],
+            date=e["dataColeta"] or "",
+            description=e["descricao"] or "",
+        )
+        for e in evidences_raw
+    ]
+
+    network = BayesianNetwork()
+
+    for e in evidences:
+        print({
+            "evidence": e.name,
+            "weight": e.weight
+        })
+
+    analysis = network.run(
+        case_id=caso_id,
+        suspects=suspects,
+        evidences=evidences,
+    )
+
+    return analysis
