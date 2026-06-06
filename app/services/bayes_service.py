@@ -20,6 +20,13 @@ def run_bayes_preview_service(caso_id):
             version=1,
         )
 
-        save_bayes_results(tx, caso_id, result.to_dict()["ranking"])
+        result_dict = result.to_dict()
 
-        return result.to_dict()
+        save_bayes_results(
+            tx,
+            caso_id,
+            result_dict["ranking"],
+            result_dict["case_uncertainty"],
+        )
+
+        return result_dict 

@@ -75,6 +75,7 @@ def get_cases_by_user(tx, user_id):
       resp.sobrenome     AS responsavelSobrenome,
       topSuspeito.nome   AS topSuspeitoNome,
       topSuspeito.probabilidadeAtual AS topSuspeitoProbab,
+      topSuspeito.fotoUrl AS topSuspeitoFotoUrl,
       qtdSuspeitos,
       qtdEvidencias,
       atualizadoEm

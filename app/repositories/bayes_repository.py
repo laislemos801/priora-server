@@ -97,8 +97,8 @@ def get_evidences_for_bayes(tx, caso_id):
 
     return evidences
 
-def save_bayes_results(tx, caso_id, ranking):
-    query = """
+def save_bayes_results(tx, caso_id, ranking, case_uncertainty):
+    query_suspects = """
     UNWIND $ranking AS r
     MATCH (s:Suspeito {id: r.suspect_id})
     SET s.probabilidadeAtual = r.probability_pct,
@@ -106,4 +106,11 @@ def save_bayes_results(tx, caso_id, ranking):
         s.tendencia          = r.trend,
         s.atualizadoEm       = datetime()
     """
-    tx.run(query, casoId=caso_id, ranking=ranking)
+    tx.run(query_suspects, casoId=caso_id, ranking=ranking)
+
+    query_case = """
+    MATCH (c:Caso {id: $casoId})
+    SET c.incerteza    = $incerteza,
+        c.atualizadoEm = datetime()
+    """
+    tx.run(query_case, casoId=caso_id, incerteza=case_uncertainty)
