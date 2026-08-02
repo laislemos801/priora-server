@@ -61,3 +61,4 @@ async def upload_board_image(caso_id: str, file_bytes: bytes, content_type: str)
         raise Exception(f"Erro ao enviar imagem para o Supabase: {response.text}")
 
     return f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BOARD_BUCKET}/{object_path}"
+
