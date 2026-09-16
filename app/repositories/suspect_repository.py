@@ -1,3 +1,12 @@
+def get_case_id_for_suspect(tx, suspect_id: str) -> str | None:
+    query = """
+    MATCH (c:Caso)-[:TEM_SUSPEITO]->(s:Suspeito {id: $suspectId})
+    RETURN c.id AS casoId
+    """
+    record = tx.run(query, suspectId=suspect_id).single()
+    return record["casoId"] if record else None
+
+
 def create_suspect(tx, data):
     query = """
     MATCH (c:Caso {id: $casoId})

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import router
-from app.database.neo4j import verify_connection, driver
+from app.database.neo4j import verify_connection, ensure_constraints, driver
 
 app = FastAPI(title="Priora API")
 
@@ -18,6 +18,7 @@ app.include_router(router)
 @app.on_event("startup")
 async def startup():
     verify_connection()
+    ensure_constraints()
 
 @app.get("/")
 def read_root():

@@ -40,26 +40,40 @@ class Evidence:
     """
     Representa uma evidência vinculada a um ou mais suspeitos.
 
-    Attributes:
-        weight: P(E|H) ∈ (0.0, 1.0) — quão incriminatória é esta evidência
-                se o suspeito FOR culpado. Não pode ser 0 nem 1 exatos
-                (evita colapso do produto).
+    Segue a separação de dois níveis da documentação (seção 16.3):
+    - reliability (r): confiabilidade da EVIDÊNCIA em si (pesoCondicional),
+      única por evidência, independente de para quem ela aponta.
+    - suspect_links (v): força do VÍNCULO entre a evidência e CADA suspeito
+      (pesoVinculo), podendo ser diferente para cada suspeito vinculado.
+
+    A contribuição C(Hᵢ, eⱼ) = 1 + (r × v × 1/|S|) usa r e o v específico
+    do suspeito Hᵢ.
     """
-    id:           str
-    name:         str
-    type:         EvidenceType
-    status:       EvidenceStatus
-    weight:       float          # P(E|H) ∈ (0.0, 1.0)
-    suspect_ids:  list[str]
-    date:         str            = ""
-    description:  str            = ""
+    id:             str
+    name:           str
+    type:           EvidenceType
+    status:         EvidenceStatus
+    reliability:    float               # r ∈ [0.0, 1.0] — pesoCondicional
+    suspect_links:  dict[str, float]    # {suspeito_id: pesoVinculo ∈ [0.0, 1.0]}
+    date:           str                 = ""
+    description:    str                 = ""
 
     def __post_init__(self):
-        if not (0.0 < self.weight < 1.0):
+        if not (0.0 <= self.reliability <= 1.0):
             raise ValueError(
-                f"Evidência '{self.name}': weight deve estar em (0.0, 1.0) exclusivo, "
-                f"recebido {self.weight}."
+                f"Evidência '{self.name}': peso da evidência deve estar entre 0.0 e 1.0, "
+                f"recebido {self.reliability}."
             )
+        for suspect_id, peso_vinculo in self.suspect_links.items():
+            if not (0.0 <= peso_vinculo <= 1.0):
+                raise ValueError(
+                    f"Evidência '{self.name}': peso de vínculo com o suspeito {suspect_id} "
+                    f"deve estar entre 0.0 e 1.0, recebido {peso_vinculo}."
+                )
+
+    @property
+    def suspect_ids(self) -> list[str]:
+        return list(self.suspect_links.keys())
 
 
 @dataclass
@@ -249,31 +263,44 @@ class BayesianNetwork:
     
     def _evidence_contribution(self, suspect: Suspect, evidence: Evidence, all_suspects: list[Suspect]) -> float:
         """
-        Mede quanto a evidência suporta ESTE suspeito em relação aos outros.
+        Implementa C(Hᵢ, eⱼ) = 1 + (r × v × 1/|S|) da documentação (seção 16.3).
+
+        Uma evidência não vinculada ao suspeito não entra na formulação do
+        documento — portanto não deve afetar seu score (contribuição neutra
+        = 1, ou seja, log(1) = 0 na soma em log-space).
         """
 
-        if suspect.id not in evidence.suspect_ids:
-            # não favorecido diretamente → ainda pode ser levemente afetado
-            return 1.0 - (evidence.weight * 0.2)
+        if suspect.id not in evidence.suspect_links:
+            return 1.0
+
+        peso_vinculo = evidence.suspect_links[suspect.id]
 
         # suspeitos que também recebem essa evidência
-        competitors = len(evidence.suspect_ids)
+        competitors = len(evidence.suspect_links)
 
-        # quanto mais compartilhada a evidência, menor o impacto
+        # quanto mais compartilhada a evidência, menor o impacto (fator de exclusividade)
         share_factor = 1.0 / competitors
 
-        return 1.0 + (evidence.weight * share_factor)
+        return 1.0 + (evidence.reliability * peso_vinculo * share_factor)
 
     # ──────────────────────────────────────────────────────────────
     # LIKELIHOOD RATIO MODEL
     # ──────────────────────────────────────────────────────────────
 
     def _log_likelihood_ratio(self, suspect, evidences, all_suspects):
+        """
+        IMPORTANTE: `_evidence_contribution` retorna valores em [1.0, 2.0]
+        (1 + r·v·fatorExclusividade, com r,v ∈ [0,1]), não em (0,1) como
+        uma probabilidade. Usar `_clamp` aqui (que teto em 1 - epsilon)
+        achatava toda contribuição > 1 de volta para ~1, anulando o efeito
+        de qualquer evidência no score. Só é preciso um piso contra
+        log(0) — nunca um teto.
+        """
         score = 0.0
 
         for e in evidences:
             contrib = self._evidence_contribution(suspect, e, all_suspects)
-            score += math.log(self._clamp(contrib))
+            score += math.log(max(contrib, self.epsilon))
 
         return score
 
@@ -289,7 +316,7 @@ class BayesianNetwork:
         """
 
         # heurística simples e estável
-        return self._clamp(1.0 - evidence.weight)
+        return self._clamp(1.0 - evidence.reliability)
 
     def _clamp(self, x: float) -> float:
         return min(max(x, self.epsilon), 1.0 - self.epsilon)
@@ -351,8 +378,8 @@ if __name__ == "__main__":
     print(f"{'═' * 76}")
 
     ev_forte = [Evidence(id="e1", name="DNA forte", type=EvidenceType.DNA,
-                         status=EvidenceStatus.COLETADA, weight=0.90,
-                         suspect_ids=["a"])]
+                         status=EvidenceStatus.COLETADA, reliability=1.0,
+                         suspect_links={"a": 0.90})]
     r_ev = network.run("caso-ev", s_base, ev_forte, version=1)
 
     for r in r_ev.ranking:
@@ -378,13 +405,13 @@ if __name__ == "__main__":
     ]
 
     evidences = [
-        Evidence(id="e1", name="Digital no local", type=EvidenceType.DIGITAL,    status=EvidenceStatus.COLETADA,   weight=0.75, suspect_ids=["s1","s2"]),
-        Evidence(id="e2", name="DNA amostra #1",   type=EvidenceType.DNA,        status=EvidenceStatus.EM_ANALISE, weight=0.80, suspect_ids=["s1","s3"]),
-        Evidence(id="e3", name="Depoimento teste", type=EvidenceType.DEPOIMENTO, status=EvidenceStatus.CUSTODIADA, weight=0.32, suspect_ids=["s1"]),
-        Evidence(id="e4", name="Digital entrada",  type=EvidenceType.DIGITAL,    status=EvidenceStatus.EM_ANALISE, weight=0.50, suspect_ids=["s2","s4"]),
-        Evidence(id="e5", name="DNA amostra #2",   type=EvidenceType.DNA,        status=EvidenceStatus.CUSTODIADA, weight=0.60, suspect_ids=["s3"]),
-        Evidence(id="e6", name="Depoimento B",     type=EvidenceType.DEPOIMENTO, status=EvidenceStatus.CUSTODIADA, weight=0.25, suspect_ids=["s5","s6"]),
-        Evidence(id="e7", name="DNA amostra #3",   type=EvidenceType.DNA,        status=EvidenceStatus.COLETADA,   weight=0.15, suspect_ids=["s7"]),
+        Evidence(id="e1", name="Digital no local", type=EvidenceType.DIGITAL,    status=EvidenceStatus.COLETADA,   reliability=1.0, suspect_links={"s1": 0.75, "s2": 0.75}),
+        Evidence(id="e2", name="DNA amostra #1",   type=EvidenceType.DNA,        status=EvidenceStatus.EM_ANALISE, reliability=1.0, suspect_links={"s1": 0.80, "s3": 0.80}),
+        Evidence(id="e3", name="Depoimento teste", type=EvidenceType.DEPOIMENTO, status=EvidenceStatus.CUSTODIADA, reliability=1.0, suspect_links={"s1": 0.32}),
+        Evidence(id="e4", name="Digital entrada",  type=EvidenceType.DIGITAL,    status=EvidenceStatus.EM_ANALISE, reliability=1.0, suspect_links={"s2": 0.50, "s4": 0.50}),
+        Evidence(id="e5", name="DNA amostra #2",   type=EvidenceType.DNA,        status=EvidenceStatus.CUSTODIADA, reliability=1.0, suspect_links={"s3": 0.60}),
+        Evidence(id="e6", name="Depoimento B",     type=EvidenceType.DEPOIMENTO, status=EvidenceStatus.CUSTODIADA, reliability=1.0, suspect_links={"s5": 0.25, "s6": 0.25}),
+        Evidence(id="e7", name="DNA amostra #3",   type=EvidenceType.DNA,        status=EvidenceStatus.COLETADA,   reliability=1.0, suspect_links={"s7": 0.15}),
     ]
 
     previous_mock = [

@@ -1,3 +1,31 @@
+def get_user_role_for_case(tx, user_id, caso_id):
+    """
+    Retorna o papel do usuário no caso: 'Responsavel', 'Editor', 'Leitor'
+    ou None se o usuário não tiver nenhum acesso (ou o convite ainda
+    estiver 'Pendente').
+    """
+    query = """
+    MATCH (c:Caso {id: $casoId}), (u:Usuario {id: $userId})
+    OPTIONAL MATCH (u)-[resp:RESPONSAVEL_POR]->(c)
+    OPTIONAL MATCH (u)-[acesso:TEM_ACESSO]->(c)
+    RETURN resp IS NOT NULL AS isResponsavel,
+           acesso.papel AS papel,
+           acesso.status AS status
+    """
+    record = tx.run(query, userId=user_id, casoId=caso_id).single()
+
+    if not record:
+        return None
+
+    if record["isResponsavel"]:
+        return "Responsavel"
+
+    if record["papel"] and record["status"] == "Ativo":
+        return record["papel"]
+
+    return None
+
+
 def invite_user_to_case(tx, email, caso_id, papel, user_id):
     query = """
     MATCH (sender:Usuario {id: $userId})

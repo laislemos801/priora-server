@@ -1,4 +1,4 @@
-from jose import jwt
+from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
@@ -24,3 +24,11 @@ def create_access_token(data: dict):
         SECRET_KEY,
         algorithm=ALGORITHM
     )
+
+
+def decode_access_token(token: str) -> dict:
+    """
+    Decodifica e valida um token JWT.
+    Levanta jose.JWTError se o token for inválido, malformado ou expirado.
+    """
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.core.security import get_current_user_id
 from app.services.access_service import (
     invite_user_service,
     accept_invite_service,
@@ -17,31 +18,33 @@ router = APIRouter(prefix="/access", tags=["Access"])
 
 
 @router.post("/invite", status_code=201)
-def invite_user(data: InviteUserRequest):
+def invite_user(data: InviteUserRequest, current_user_id: str = Depends(get_current_user_id)):
     return invite_user_service(
+        current_user_id,
         data.email,
         data.casoId,
-        data.papel,
-        data.userId
+        data.papel
     )
 
 
 @router.post("/accept")
-def accept_invite(data: AcceptInviteRequest):
+def accept_invite(data: AcceptInviteRequest, current_user_id: str = Depends(get_current_user_id)):
     return accept_invite_service(
+        current_user_id,
         data.userId,
         data.casoId
     )
 
 
 @router.get("/case/{caso_id}")
-def list_users(caso_id: str):
-    return list_case_users_service(caso_id)
+def list_users(caso_id: str, current_user_id: str = Depends(get_current_user_id)):
+    return list_case_users_service(current_user_id, caso_id)
 
 
 @router.patch("/case/{caso_id}/user/{user_id}")
-def update_access(caso_id: str, user_id: str, data: UpdateAccessRequest):
+def update_access(caso_id: str, user_id: str, data: UpdateAccessRequest, current_user_id: str = Depends(get_current_user_id)):
     return update_case_access_service(
+        current_user_id,
         caso_id,
         user_id,
         data.papel
@@ -49,5 +52,5 @@ def update_access(caso_id: str, user_id: str, data: UpdateAccessRequest):
 
 
 @router.delete("/case/{caso_id}/user/{user_id}")
-def delete_access(caso_id: str, user_id: str):
-    return delete_case_access_service(caso_id, user_id)
+def delete_access(caso_id: str, user_id: str, current_user_id: str = Depends(get_current_user_id)):
+    return delete_case_access_service(current_user_id, caso_id, user_id)

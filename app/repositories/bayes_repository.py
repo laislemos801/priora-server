@@ -3,7 +3,40 @@ from app.bayes.model import (
     Evidence,
     EvidenceType,
     EvidenceStatus,
+    SuspectResult,
 )
+
+
+def get_previous_results_for_bayes(tx, caso_id):
+    """
+    Reconstrói um `previous_results` mínimo a partir do último
+    `probabilidadeAtual` persistido em cada suspeito, para que o motor
+    bayesiano consiga calcular a tendência (Alta/Baixa/Estável) real
+    comparando com o cálculo anterior, em vez de sempre "Estável".
+
+    Só os campos suspect.id e probability_pct são lidos por
+    BayesianNetwork._compute_trend, então os demais campos do
+    SuspectResult ficam com valores neutros (não são usados).
+    """
+    query = """
+    MATCH (c:Caso {id: $casoId})-[:TEM_SUSPEITO]->(s:Suspeito)
+    WHERE s.probabilidadeAtual IS NOT NULL
+    RETURN s.id AS id, s.probabilidadeAtual AS probabilidadeAtual
+    """
+    result = tx.run(query, casoId=caso_id)
+
+    return [
+        SuspectResult(
+            suspect=Suspect(id=record["id"], name=""),
+            prior=0.0,
+            p_e_given_h=0.0,
+            numerator=0.0,
+            p_h_given_e=0.0,
+            probability_pct=record["probabilidadeAtual"],
+            uncertainty_pct=0.0,
+        )
+        for record in result
+    ]
 
 
 def get_suspects_for_bayes(tx, caso_id):
@@ -52,18 +85,27 @@ def get_suspects_for_bayes(tx, caso_id):
 
 
 def get_evidences_for_bayes(tx, caso_id):
+    """
+    Uma evidência compartilhada entre N suspeitos deve virar UM único
+    Evidence com um suspect_links = {suspeito_id: pesoVinculo} contendo
+    todos os N vínculos, para que o modelo bayesiano calcule corretamente
+    o fator de exclusividade (1/|S|) e o pesoVinculo individual de cada
+    suspeito (VINCULA é uma relação por par evidência↔suspeito).
+    """
     query = """
     MATCH (c:Caso {id: $casoId})-[:TEM_EVIDENCIA]->(e:Evidencia)
     OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
-    WITH e, collect({
-        suspectId: s.id,
-        pesoVinculo: v.pesoVinculo
-    }) AS vinculos
+    WITH e, collect(
+        CASE WHEN s IS NOT NULL
+            THEN { suspeitoId: s.id, pesoVinculo: v.pesoVinculo }
+            ELSE NULL
+        END
+    ) AS vinculosRaw
     RETURN e {
         .id, .nome, .tipo, .status,
         .pesoCondicional, .dataColeta, .descricao
     } AS evidencia,
-    vinculos
+    [x IN vinculosRaw WHERE x IS NOT NULL] AS vinculos
     ORDER BY e.criadoEm ASC
     """
 
@@ -73,27 +115,27 @@ def get_evidences_for_bayes(tx, caso_id):
     for record in result:
         e = record["evidencia"]
         vinculos = record["vinculos"]
-        peso_evidencia = float(e.get("pesoCondicional") or 0.5)
 
-        for v in vinculos:
-            if v["suspectId"] is None:
-                continue
+        if not vinculos:
+            continue
 
-            peso_vinculo = float(v["pesoVinculo"] or 1.0)
-            peso_final   = peso_evidencia * peso_vinculo
+        suspect_links = {
+            v["suspeitoId"]: float(v["pesoVinculo"] if v["pesoVinculo"] is not None else 1.0)
+            for v in vinculos
+        }
 
-            evidences.append(
-                Evidence(
-                    id=f"{e['id']}_{v['suspectId']}",
-                    name=e["nome"],
-                    type=EvidenceType(e["tipo"]),
-                    status=EvidenceStatus(e["status"]),
-                    weight=peso_final,
-                    suspect_ids=[v["suspectId"]],
-                    date=str(e["dataColeta"]) if e.get("dataColeta") else "",
-                    description=e.get("descricao") or "",
-                )
+        evidences.append(
+            Evidence(
+                id=e["id"],
+                name=e["nome"],
+                type=EvidenceType(e["tipo"]),
+                status=EvidenceStatus(e["status"]),
+                reliability=float(e.get("pesoCondicional") or 0.5),
+                suspect_links=suspect_links,
+                date=str(e["dataColeta"]) if e.get("dataColeta") else "",
+                description=e.get("descricao") or "",
             )
+        )
 
     return evidences
 
@@ -114,3 +156,34 @@ def save_bayes_results(tx, caso_id, ranking, case_uncertainty):
         c.atualizadoEm = datetime()
     """
     tx.run(query_case, casoId=caso_id, incerteza=case_uncertainty)
+
+
+def save_analysis_snapshot(tx, caso_id, ranking):
+    """
+    Persiste o snapshot de cada cálculo bayesiano como um nó :AnaliseProb
+    (seção 15.2.6 da documentação), ligado ao caso via :TEM_ANALISE e ao
+    suspeito avaliado via :AVALIA. Cada chamada cria um novo conjunto de
+    nós (histórico), nunca sobrescreve um snapshot anterior.
+    """
+    denominator = sum(r["numerator"] for r in ranking) or 1.0
+
+    query = """
+    UNWIND $ranking AS r
+    MATCH (c:Caso {id: $casoId})
+    MATCH (s:Suspeito {id: r.suspect_id})
+    CREATE (a:AnaliseProb {
+        id:              randomUUID(),
+        prior:           r.prior,
+        pEH:             r.p_e_given_h,
+        numerator:       r.numerator,
+        denominator:     $denominator,
+        posterior:       r.p_h_given_e,
+        probabilityPct:  r.probability_pct,
+        uncertaintyPct:  r.uncertainty_pct,
+        position:        r.position,
+        calculadoEm:     datetime()
+    })
+    CREATE (c)-[:TEM_ANALISE]->(a)
+    CREATE (a)-[:AVALIA]->(s)
+    """
+    tx.run(query, casoId=caso_id, ranking=ranking, denominator=denominator)

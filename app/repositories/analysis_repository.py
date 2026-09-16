@@ -25,13 +25,16 @@ def generate_analysis(tx, data):
 
 
 def get_case_uncertainty_evolution(tx, caso_id):
+    """
+    Evolução da incerteza média do caso ao longo do tempo, com base nos
+    snapshots :AnaliseProb gravados a cada recálculo bayesiano
+    (ver app.repositories.bayes_repository.save_analysis_snapshot).
+    """
     query = """
     MATCH (c:Caso {id: $casoId})-[:TEM_ANALISE]->(a:AnaliseProb)
-    RETURN
-        a.versao AS versao,
-        avg(a.incerteza) AS incerteza,
-        toString(min(a.geradaEm)) AS geradaEm
-    ORDER BY versao ASC
+    WITH a.calculadoEm AS calculadoEm, avg(a.uncertaintyPct) AS incerteza
+    RETURN toString(calculadoEm) AS calculadoEm, incerteza
+    ORDER BY calculadoEm ASC
     """
 
     result = tx.run(query, casoId=caso_id)
@@ -39,13 +42,17 @@ def get_case_uncertainty_evolution(tx, caso_id):
 
 
 def get_suspect_history(tx, suspeito_id):
+    """
+    Histórico de probabilidade posterior de um suspeito ao longo do
+    tempo, com base nos snapshots :AnaliseProb ligados a ele via :AVALIA.
+    """
     query = """
-    MATCH (s:Suspeito {id: $suspeitoId})-[h:HISTORICO_EM]->(a:AnaliseProb)
+    MATCH (a:AnaliseProb)-[:AVALIA]->(s:Suspeito {id: $suspeitoId})
     RETURN
-        h.probabilidadeNaEpoca * 100.0 AS probabilidade,
-        toString(h.dataSnapshot) AS data,
-        a.versao AS versao
-    ORDER BY h.dataSnapshot ASC
+        a.probabilityPct AS probabilidade,
+        toString(a.calculadoEm) AS data,
+        a.position AS posicao
+    ORDER BY a.calculadoEm ASC
     """
 
     result = tx.run(query, suspeitoId=suspeito_id)
@@ -173,14 +180,20 @@ def load_evidences(tx, caso_id):
 
     OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
 
+    WITH e, collect(
+        CASE WHEN s IS NOT NULL
+            THEN { suspeitoId: s.id, pesoVinculo: v.pesoVinculo }
+            ELSE NULL
+        END
+    ) AS vinculosRaw
+
     RETURN
         e.id AS id,
         e.nome AS nome,
         e.tipo AS tipo,
         e.status AS status,
         e.pesoCondicional AS peso,
-        v.pesoVinculo AS pesoVinculo,
-        collect(s.id) AS suspectIds,
+        [x IN vinculosRaw WHERE x IS NOT NULL] AS vinculos,
         toString(e.dataColeta) AS dataColeta,
         e.descricao AS descricao
     """
@@ -208,21 +221,19 @@ def build_analysis(caso_id, suspects_raw, evidences_raw):
             name=e["nome"],
             type=EvidenceType(e["tipo"]),
             status=EvidenceStatus(e["status"]),
-            weight=e["peso"] * e["pesoVinculo"],
-            suspect_ids=e["suspectIds"],
+            reliability=e["peso"],
+            suspect_links={
+                v["suspeitoId"]: (v["pesoVinculo"] if v["pesoVinculo"] is not None else 1.0)
+                for v in e["vinculos"]
+            },
             date=e["dataColeta"] or "",
             description=e["descricao"] or "",
         )
         for e in evidences_raw
+        if e["vinculos"]
     ]
 
     network = BayesianNetwork()
-
-    for e in evidences:
-        print({
-            "evidence": e.name,
-            "weight": e.weight
-        })
 
     analysis = network.run(
         case_id=caso_id,

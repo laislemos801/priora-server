@@ -1,3 +1,22 @@
+def get_case_id_for_evidence(tx, evidence_id: str) -> str | None:
+    query = """
+    MATCH (c:Caso)-[:TEM_EVIDENCIA]->(e:Evidencia {id: $evidenceId})
+    RETURN c.id AS casoId
+    """
+    record = tx.run(query, evidenceId=evidence_id).single()
+    return record["casoId"] if record else None
+
+
+def get_case_ids_for_evidences(tx, evidence_ids: list[str]) -> list[str]:
+    query = """
+    UNWIND $ids AS eid
+    MATCH (c:Caso)-[:TEM_EVIDENCIA]->(e:Evidencia {id: eid})
+    RETURN DISTINCT c.id AS casoId
+    """
+    result = tx.run(query, ids=evidence_ids)
+    return [record["casoId"] for record in result]
+
+
 def create_evidence(tx, data):
     query = """
     MATCH (c:Caso {id: $casoId})
@@ -14,24 +33,23 @@ def create_evidence(tx, data):
     })
     CREATE (c)-[:TEM_EVIDENCIA { adicionadaEm: datetime() }]->(e)
     WITH e
-    UNWIND $suspeitoIds AS suspeitoId
-    MATCH (s:Suspeito {id: suspeitoId})
+    UNWIND $vinculos AS v
+    MATCH (s:Suspeito {id: v.suspeitoId})
     CREATE (e)-[:VINCULA {
-      pesoVinculo: $pesoVinculo,
+      pesoVinculo: v.pesoVinculo,
       vinculadoEm: datetime()
     }]->(s)
     RETURN e { .id, .nome, .tipo, .status, .pesoCondicional } AS evidencia
     """
     result = tx.run(query,
         casoId=data["casoId"],
-        suspeitoIds=data["suspeitoIds"],
+        vinculos=data["vinculos"],
         nome=data["nome"],
         tipo=data["tipo"],
         descricao=data.get("descricao"),
         status=data["status"],
         dataColeta=data["dataColeta"],
         peso=data["peso"],
-        pesoVinculo=data["pesoVinculo"],
     )
     record = result.single()
     if not record:
@@ -39,15 +57,26 @@ def create_evidence(tx, data):
     return record["evidencia"]
 
 
+_SUSPEITOS_COM_PESO = """
+    WITH e, collect(
+        CASE WHEN s IS NOT NULL
+            THEN { id: s.id, nome: s.nome, pesoVinculo: v.pesoVinculo }
+            ELSE NULL
+        END
+    ) AS suspeitosRaw
+    WITH e, [x IN suspeitosRaw WHERE x IS NOT NULL] AS suspeitos
+"""
+
+
 def list_evidences_by_case(tx, caso_id):
-    query = """
-    MATCH (c:Caso {id: $casoId})-[:TEM_EVIDENCIA]->(e:Evidencia)
-    OPTIONAL MATCH (e)-[:VINCULA]->(s:Suspeito)
-    WITH e, collect(s { .id, .nome }) AS suspeitos
+    query = f"""
+    MATCH (c:Caso {{id: $casoId}})-[:TEM_EVIDENCIA]->(e:Evidencia)
+    OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
+    {_SUSPEITOS_COM_PESO}
     ORDER BY e.criadoEm DESC
-    RETURN e {
+    RETURN e {{
       .id, .nome, .tipo, .status, .dataColeta, .pesoCondicional
-    } AS evidencia,
+    }} AS evidencia,
     suspeitos
     """
     result = tx.run(query, casoId=caso_id)
@@ -68,17 +97,16 @@ def delete_evidences(tx, evidence_ids: list[str]):
   """
   tx.run(query, ids=evidence_ids)
 
-# buscar evidência por id, incluindo suspeitos vinculados e pesoVinculo
+# buscar evidência por id, incluindo suspeitos vinculados e o pesoVinculo de cada um
 def get_evidence_by_id(tx, evidence_id: str):
-    query = """
-    MATCH (e:Evidencia {id: $evidenceId})
+    query = f"""
+    MATCH (e:Evidencia {{id: $evidenceId}})
     OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
-    WITH e, collect(s { .id, .nome }) AS suspeitos,
-        collect(v.pesoVinculo)[0] AS pesoVinculo
-    RETURN e {
+    {_SUSPEITOS_COM_PESO}
+    RETURN e {{
       .id, .nome, .tipo, .status, .descricao,
       .pesoCondicional, .dataColeta
-    } AS evidencia, suspeitos, pesoVinculo
+    }} AS evidencia, suspeitos
     """
     result = tx.run(query, evidenceId=evidence_id)
     record = result.single()
@@ -86,7 +114,6 @@ def get_evidence_by_id(tx, evidence_id: str):
         raise Exception("Evidência não encontrada")
     ev = dict(record["evidencia"])
     ev["dataColeta"]  = str(ev["dataColeta"]) if ev.get("dataColeta") else None
-    ev["pesoVinculo"] = record["pesoVinculo"]
     ev["suspeitos"]   = record["suspeitos"]
     return ev
 
@@ -94,12 +121,13 @@ def get_evidence_by_id(tx, evidence_id: str):
 def update_evidence(tx, evidence_id: str, data: dict):
     """
     Atualiza campos escalares da evidência e,
-    se suspeitoIds for passado, recria os vínculos VINCULA.
+    se `vinculos` for passado, recria os vínculos VINCULA
+    com o pesoVinculo individual de cada suspeito.
     """
     # Monta SET dinâmico só com os campos enviados
     scalar_fields = {
         k: v for k, v in data.items()
-        if k not in ("suspeitoIds",) and v is not None
+        if k not in ("vinculos",) and v is not None
     }
 
     set_clauses = []
@@ -112,13 +140,10 @@ def update_evidence(tx, evidence_id: str, data: dict):
         "descricao":  "e.descricao",
         "dataColeta": "e.dataColeta",
         "peso":       "e.pesoCondicional",
-        "pesoVinculo": None,  # tratado via vínculos
     }
 
     for field, value in scalar_fields.items():
-        if field == "pesoVinculo":
-            continue           # só atualizado nos vínculos
-        if field not in field_map or field_map[field] is None:
+        if field not in field_map:
             continue
         neo4j_prop = field_map[field]
         param_name = field
@@ -137,34 +162,32 @@ def update_evidence(tx, evidence_id: str, data: dict):
     SET {set_str}
     """
 
-    # Se suspeitoIds foi enviado, recria vínculos VINCULA
-    suspeitoIds = data.get("suspeitoIds")
-    pesoVinculo = data.get("pesoVinculo")
+    # Se vinculos foi enviado, recria os vínculos VINCULA com o peso de cada suspeito
+    vinculos = data.get("vinculos")
 
-    if suspeitoIds is not None:
+    if vinculos is not None:
         query += """
     WITH e
     OPTIONAL MATCH (e)-[r:VINCULA]->()
     DELETE r
     WITH e
-    UNWIND $suspeitoIds AS sid
-    MATCH (s:Suspeito {id: sid})
+    UNWIND $vinculos AS v
+    MATCH (s:Suspeito {id: v.suspeitoId})
     CREATE (e)-[:VINCULA {
-        pesoVinculo: $pesoVinculo,
+        pesoVinculo: v.pesoVinculo,
         vinculadoEm: datetime()
     }]->(s)
         """
-        params["suspeitoIds"] = suspeitoIds
-        params["pesoVinculo"] = pesoVinculo if pesoVinculo is not None else 0.5
+        params["vinculos"] = vinculos
 
-    query += """
+    query += f"""
     WITH e
-    OPTIONAL MATCH (e)-[:VINCULA]->(s:Suspeito)
-    WITH e, collect(s { .id, .nome }) AS suspeitos
-    RETURN e {
+    OPTIONAL MATCH (e)-[v:VINCULA]->(s:Suspeito)
+    {_SUSPEITOS_COM_PESO}
+    RETURN e {{
         .id, .nome, .tipo, .status, .descricao,
         .pesoCondicional
-    } AS evidencia, suspeitos
+    }} AS evidencia, suspeitos
     """
 
     result = tx.run(query, **params)

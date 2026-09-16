@@ -1,3 +1,12 @@
+def get_case_id_for_contact(tx, contato_id: str) -> str | None:
+    query = """
+    MATCH (c:Caso)-[:TEM_CONTATO]->(ct:Contato {id: $contatoId})
+    RETURN c.id AS casoId
+    """
+    record = tx.run(query, contatoId=contato_id).single()
+    return record["casoId"] if record else None
+
+
 def create_contact(tx, data):
     query = """
     MATCH (c:Caso {id: $casoId})
