@@ -6,13 +6,16 @@ from app.services.case_service import (
     update_uncertainty_service,
     get_case_service,
     update_case_service,
-    delete_case_service
+    delete_case_service,
+    get_estimated_profile_service,
+    update_estimated_profile_service,
 )
 
 from app.schemas.case_schema import (
     CreateCaseRequest,
     UpdateUncertaintyRequest,
-    UpdateCaseRequest
+    UpdateCaseRequest,
+    EstimatedProfileRequest,
 )
 
 router = APIRouter(prefix="/cases", tags=["Cases"])
@@ -42,6 +45,20 @@ def update_uncertainty(caso_id: str, data: UpdateUncertaintyRequest, current_use
         current_user_id,
         caso_id,
         data.incerteza
+    )
+
+
+@router.get("/{caso_id}/estimated-profile")
+def get_estimated_profile_route(caso_id: str, current_user_id: str = Depends(get_current_user_id)):
+    return get_estimated_profile_service(current_user_id, caso_id)
+
+
+@router.put("/{caso_id}/estimated-profile")
+def update_estimated_profile_route(caso_id: str, data: EstimatedProfileRequest, current_user_id: str = Depends(get_current_user_id)):
+    return update_estimated_profile_service(
+        current_user_id,
+        caso_id,
+        data.dict()
     )
 
 

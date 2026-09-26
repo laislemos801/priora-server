@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -33,3 +33,11 @@ class UpdateCaseRequest(BaseModel):
     enderecoEstado: Optional[str] = None
 
     dataOcorrencia: str
+
+
+class EstimatedProfileRequest(BaseModel):
+    comportamento: float = Field(..., ge=0, le=100)
+    agressividade: float = Field(..., ge=0, le=100)
+    proximidade: float = Field(..., ge=0, le=100)
+    conexoesSociais: float = Field(..., ge=0, le=100)
+    nivelConfissao: float = Field(..., ge=0, le=100)

@@ -8,7 +8,9 @@ from app.repositories.case_repository import (
     update_case_uncertainty,
     get_case_by_id_tx,
     update_case,
-    delete_case
+    delete_case,
+    get_estimated_profile,
+    set_estimated_profile,
 )
 
 def create_case_service(current_user_id: str, data):
@@ -51,3 +53,17 @@ def delete_case_service(current_user_id: str, caso_id):
         # só o responsável pelo caso pode excluí-lo (doc, seção 10, UC03)
         require_case_role(tx, current_user_id, caso_id, OWNER_ROLES)
         return delete_case(tx, caso_id)
+
+
+def get_estimated_profile_service(current_user_id: str, caso_id: str):
+    with get_session() as tx:
+        require_case_role(tx, current_user_id, caso_id, READ_ROLES)
+        return get_estimated_profile(tx, caso_id)
+
+
+def update_estimated_profile_service(current_user_id: str, caso_id: str, data):
+    # perfil estimado é só visualização (perfilamento criminal): não entra no
+    # motor bayesiano, então não dispara recálculo.
+    with get_session() as tx:
+        require_case_role(tx, current_user_id, caso_id, WRITE_ROLES)
+        return set_estimated_profile(tx, caso_id, current_user_id, data)

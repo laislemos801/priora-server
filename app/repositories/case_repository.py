@@ -209,3 +209,69 @@ def delete_case(tx, caso_id):
         "deleted": True,
         "casoId": caso_id
     }
+
+# Perfil estimado do criminoso: guardado como propriedades do próprio Caso
+# para acompanhar o ciclo de vida dele (delete_case remove só relações).
+def get_estimated_profile(tx, caso_id):
+    query = """
+    MATCH (c:Caso {id: $casoId})
+    RETURN
+        c.perfilEstimadoComportamento AS comportamento,
+        c.perfilEstimadoAgressividade AS agressividade,
+        c.perfilEstimadoProximidade AS proximidade,
+        c.perfilEstimadoConexoesSociais AS conexoesSociais,
+        c.perfilEstimadoNivelConfissao AS nivelConfissao,
+        c.perfilEstimadoAtualizadoEm AS atualizadoEm
+    """
+    record = tx.run(query, casoId=caso_id).single()
+
+    if not record:
+        raise Exception("Caso não encontrado")
+
+    return _estimated_profile_response(caso_id, record)
+
+
+def set_estimated_profile(tx, caso_id, user_id, data):
+    query = """
+    MATCH (c:Caso {id: $casoId})
+    SET c.perfilEstimadoComportamento = $comportamento,
+        c.perfilEstimadoAgressividade = $agressividade,
+        c.perfilEstimadoProximidade = $proximidade,
+        c.perfilEstimadoConexoesSociais = $conexoesSociais,
+        c.perfilEstimadoNivelConfissao = $nivelConfissao,
+        c.perfilEstimadoAtualizadoEm = datetime(),
+        c.perfilEstimadoAtualizadoPor = $userId
+    RETURN
+        c.perfilEstimadoComportamento AS comportamento,
+        c.perfilEstimadoAgressividade AS agressividade,
+        c.perfilEstimadoProximidade AS proximidade,
+        c.perfilEstimadoConexoesSociais AS conexoesSociais,
+        c.perfilEstimadoNivelConfissao AS nivelConfissao,
+        c.perfilEstimadoAtualizadoEm AS atualizadoEm
+    """
+    record = tx.run(query, casoId=caso_id, userId=user_id, **data).single()
+
+    if not record:
+        raise Exception("Caso não encontrado")
+
+    return _estimated_profile_response(caso_id, record)
+
+
+_ESTIMATED_PROFILE_FIELDS = (
+    "comportamento",
+    "agressividade",
+    "proximidade",
+    "conexoesSociais",
+    "nivelConfissao",
+)
+
+
+def _estimated_profile_response(caso_id, record):
+    perfil = {field: record[field] for field in _ESTIMATED_PROFILE_FIELDS}
+    definido = all(value is not None for value in perfil.values())
+
+    return {
+        "casoId": caso_id,
+        "perfil": perfil if definido else None,
+        "atualizadoEm": str(record["atualizadoEm"]) if record["atualizadoEm"] else None,
+    }
