@@ -345,6 +345,20 @@ class BayesianNetwork:
         return Trend.STABLE
 
 
+def shannon_entropy_bits(probabilities: list[float]) -> float:
+    """
+    H(P) = -Σ pᵢ·log2(pᵢ), em bits (SHANNON, 1948).
+
+    Mede a incerteza de uma distribuição de probabilidade: H = 0 quando um
+    resultado é certo (algum pᵢ = 1); H = log2(n) no caso de distribuição
+    uniforme entre n resultados (incerteza máxima). Usada pelo módulo de
+    Priorização de Ações para medir o ganho de informação esperado (EIG)
+    de uma ação como a redução de entropia que ela proporciona
+    (LINDLEY, 1956; JACKSON et al., 2019).
+    """
+    return -sum(p * math.log2(p) for p in probabilities if p > 0)
+
+
 # ─── Testes / Demonstração ────────────────────────────────────────────────────
 
 if __name__ == "__main__":

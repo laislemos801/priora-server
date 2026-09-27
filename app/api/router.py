@@ -8,6 +8,7 @@ from app.api.routes.analysis_routes import router as analysis_router
 from app.api.routes.contact_routes import router as contact_router
 from app.api.routes import bayes_routes
 from app.api.routes.investigation_board_routes import router as investigation_board_router
+from app.api.routes.priority_routes import router as priority_router
 
 router = APIRouter()
 
@@ -20,3 +21,4 @@ router.include_router(analysis_router)
 router.include_router(contact_router)
 router.include_router(bayes_routes.router)
 router.include_router(investigation_board_router)
+router.include_router(priority_router)
