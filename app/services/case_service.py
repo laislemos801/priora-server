@@ -45,7 +45,7 @@ def update_uncertainty_service(current_user_id: str, caso_id, nova_incerteza):
 def update_case_service(current_user_id: str, caso_id, data):
     with get_session() as tx:
         require_case_role(tx, current_user_id, caso_id, WRITE_ROLES)
-        return update_case(tx, caso_id, data)
+        return update_case(tx, caso_id, data, current_user_id)
 
 
 def delete_case_service(current_user_id: str, caso_id):
@@ -67,3 +67,5 @@ def update_estimated_profile_service(current_user_id: str, caso_id: str, data):
     with get_session() as tx:
         require_case_role(tx, current_user_id, caso_id, WRITE_ROLES)
         return set_estimated_profile(tx, caso_id, current_user_id, data)
+
+

@@ -74,3 +74,4 @@ def update_case_route(caso_id: str, data: UpdateCaseRequest, current_user_id: st
 @router.delete("/{caso_id}")
 def delete_case_route(caso_id: str, current_user_id: str = Depends(get_current_user_id)):
     return delete_case_service(current_user_id, caso_id)
+
