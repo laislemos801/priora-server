@@ -1,20 +1,31 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
+
 from app.services.user_service import (
     create_user_service,
     login_user_service,
     recovery_token_service,
     reset_password_service,
-    check_email_service  
+    check_email_service,
+    get_current_user_service,
+    update_user_photo_service,
+    update_user_service,
+    change_password_service,
 )
 
 from app.schemas.user_schema import (
     CreateUserRequest,
     LoginRequest,
     RecoverRequest,
-    ResetPasswordRequest
+    ResetPasswordRequest,
+    UpdatePhotoRequest,
+    UpdateUserRequest,
+    ChangePasswordRequest,
 )
 
-router = APIRouter(prefix="/users", tags=["Users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["Users"]
+)
 
 
 @router.post("/", status_code=201)
@@ -24,6 +35,18 @@ def create_user(data: CreateUserRequest):
         data.primeiroNome,
         data.sobrenome,
         data.senha
+    )
+
+@router.put("/me/photo")
+def update_photo(
+    data: UpdatePhotoRequest,
+    authorization: str = Header(...)
+):
+    token = authorization.replace("Bearer ", "")
+
+    return update_user_photo_service(
+        token,
+        data.fotoBase64
     )
 
 
@@ -47,6 +70,45 @@ def reset_password(data: ResetPasswordRequest):
         data.novaSenha
     )
 
+
 @router.get("/check-email")
 def check_email(email: str):
     return check_email_service(email)
+
+
+@router.get("/me")
+def get_current_user(
+    authorization: str = Header(...)
+):
+    token = authorization.replace("Bearer ", "")
+
+    return get_current_user_service(token)
+
+
+@router.put("/me")
+def update_current_user(
+    data: UpdateUserRequest,
+    authorization: str = Header(...)
+):
+    token = authorization.replace("Bearer ", "")
+
+    return update_user_service(
+        token,
+        data.email,
+        data.primeiroNome,
+        data.sobrenome
+    )
+
+
+@router.put("/me/password")
+def change_password(
+    data: ChangePasswordRequest,
+    authorization: str = Header(...)
+):
+    token = authorization.replace("Bearer ", "")
+
+    return change_password_service(
+        token,
+        data.senhaAntiga,
+        data.novaSenha
+    )

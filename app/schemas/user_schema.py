@@ -20,3 +20,16 @@ class RecoverRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     novaSenha: str
+
+class UpdateUserRequest(BaseModel):
+    primeiroNome: str
+    sobrenome: str
+    email: EmailStr
+
+
+class ChangePasswordRequest(BaseModel):
+    senhaAntiga: str
+    novaSenha: str
+
+class UpdatePhotoRequest(BaseModel):
+    fotoBase64: str

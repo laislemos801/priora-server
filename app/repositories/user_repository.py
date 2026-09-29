@@ -72,3 +72,140 @@ def check_email_exists(tx, email):
     """
     result = tx.run(query, email=email)
     return result.single() is not None
+
+def get_user_by_id(tx, user_id):
+    query = """
+    MATCH (u:Usuario {id: $user_id})
+
+    OPTIONAL MATCH (u)-[:RESPONSAVEL_POR]->(casoResponsavel:Caso)
+
+    OPTIONAL MATCH (u)-[:TEM_ACESSO {status: 'Ativo'}]->(casoAcesso:Caso)
+
+    WITH u,
+         collect(DISTINCT casoResponsavel) +
+         collect(DISTINCT casoAcesso) AS todosCasos
+
+    WITH u,
+         [c IN todosCasos WHERE c IS NOT NULL] AS casos
+
+    RETURN u {
+        .id,
+        .email,
+        .primeiroNome,
+        .sobrenome,
+        .fotoUrl
+    } AS user,
+
+    size(casos) AS totalCasos,
+
+    size([
+        c IN casos
+        WHERE c.status = 'Ativo'
+    ]) AS casosAtivos,
+
+    size([
+        c IN casos
+        WHERE c.status <> 'Ativo'
+    ]) AS casosConcluidos
+    """
+
+    result = tx.run(
+        query,
+        user_id=user_id
+    )
+
+    record = result.single()
+
+    if not record:
+        return None
+
+    user = dict(record["user"])
+
+    user["totalCasos"] = record["totalCasos"]
+    user["casosAtivos"] = record["casosAtivos"]
+    user["casosConcluidos"] = record["casosConcluidos"]
+
+    return user
+
+def update_user(tx, user_id, email, primeiro_nome, sobrenome):
+    query = """
+    MATCH (u:Usuario {id: $user_id})
+    SET u.email = $email,
+        u.primeiroNome = $primeiro_nome,
+        u.sobrenome = $sobrenome,
+        u.atualizadoEm = datetime()
+
+    RETURN u {
+        .id,
+        .email,
+        .primeiroNome,
+        .sobrenome,
+        .fotoUrl
+    } AS user
+    """
+
+    result = tx.run(
+        query,
+        user_id=user_id,
+        email=email,
+        primeiro_nome=primeiro_nome,
+        sobrenome=sobrenome
+    )
+
+    record = result.single()
+
+    return record["user"] if record else None
+
+def get_user_password(tx, user_id):
+    query = """
+    MATCH (u:Usuario {id: $user_id})
+    RETURN u.senhaHash AS senhaHash
+    """
+
+    result = tx.run(query, user_id=user_id)
+    record = result.single()
+
+    return record["senhaHash"] if record else None
+
+def update_user_password(tx, user_id, senha_hash):
+    query = """
+    MATCH (u:Usuario {id: $user_id})
+    SET u.senhaHash = $senha_hash,
+        u.atualizadoEm = datetime()
+
+    RETURN u.id AS id
+    """
+
+    result = tx.run(
+        query,
+        user_id=user_id,
+        senha_hash=senha_hash
+    )
+
+    return result.single()
+
+def update_user_photo(tx, user_id, foto_base64):
+    query = """
+    MATCH (u:Usuario {id: $user_id})
+
+    SET u.fotoUrl = $foto_base64,
+        u.atualizadoEm = datetime()
+
+    RETURN u {
+        .id,
+        .email,
+        .primeiroNome,
+        .sobrenome,
+        .fotoUrl
+    } AS user
+    """
+
+    result = tx.run(
+        query,
+        user_id=user_id,
+        foto_base64=foto_base64
+    )
+
+    record = result.single()
+
+    return record["user"] if record else None

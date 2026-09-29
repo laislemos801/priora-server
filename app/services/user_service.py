@@ -1,5 +1,5 @@
 from app.database.neo4j import get_session
-from app.utils.jwt import create_access_token
+from app.utils.jwt import create_access_token,decode_access_token
 from fastapi import HTTPException
 from app.utils.email import send_recovery_email
 from app.repositories.user_repository import (
@@ -7,7 +7,12 @@ from app.repositories.user_repository import (
     login_user,
     set_recovery_token,
     reset_password,
-    check_email_exists 
+    check_email_exists,
+    get_user_by_id,
+    update_user,
+    get_user_password,
+    update_user_password,
+    update_user_photo,
 )
 import bcrypt
 import secrets
@@ -83,3 +88,182 @@ def check_email_service(email):
     with get_session() as tx:
         exists = check_email_exists(tx, email)
     return {"exists": exists}
+
+def get_current_user_service(token):
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Token inválido"
+            )
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido ou expirado"
+        )
+
+    with get_session() as tx:
+        user = get_user_by_id(tx, user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="Usuário não encontrado"
+        )
+
+    return user
+
+def update_user_service(
+    token,
+    email,
+    primeiro_nome,
+    sobrenome
+):
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Token inválido"
+            )
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido ou expirado"
+        )
+
+    with get_session() as tx:
+
+        user = update_user(
+            tx,
+            user_id,
+            email,
+            primeiro_nome,
+            sobrenome
+        )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="Usuário não encontrado"
+        )
+
+    return user
+
+def update_user_photo_service(token, foto_base64):
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Token inválido"
+            )
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido ou expirado"
+        )
+
+    if not foto_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="Imagem não enviada"
+        )
+
+    # Limita o tamanho da string Base64
+    if len(foto_base64) > 5_000_000:
+        raise HTTPException(
+            status_code=400,
+            detail="Imagem muito grande"
+        )
+
+    with get_session() as tx:
+        user = update_user_photo(
+            tx,
+            user_id,
+            foto_base64
+        )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="Usuário não encontrado"
+        )
+
+    return user
+
+def change_password_service(
+    token,
+    senha_antiga,
+    nova_senha
+):
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Token inválido"
+            )
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido ou expirado"
+        )
+
+    if len(nova_senha) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="A nova senha deve conter pelo menos 8 caracteres"
+        )
+
+    with get_session() as tx:
+
+        senha_hash_atual = get_user_password(
+            tx,
+            user_id
+        )
+
+        if not senha_hash_atual:
+            raise HTTPException(
+                status_code=404,
+                detail="Usuário não encontrado"
+            )
+
+        senha_correta = bcrypt.checkpw(
+            senha_antiga.encode(),
+            senha_hash_atual.encode()
+        )
+
+        if not senha_correta:
+            raise HTTPException(
+                status_code=400,
+                detail="Senha antiga incorreta"
+            )
+
+        nova_hash = bcrypt.hashpw(
+            nova_senha.encode(),
+            bcrypt.gensalt()
+        ).decode()
+
+        update_user_password(
+            tx,
+            user_id,
+            nova_hash
+        )
+
+    return {
+        "message": "Senha alterada com sucesso"
+    }
