@@ -1,6 +1,7 @@
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, TrustCustomCAs
 from contextlib import contextmanager
 import os
+import certifi
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +14,27 @@ NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 if not all([NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD]):
     raise ValueError("Variáveis do Neo4j não configuradas corretamente")
 
+
+def _tls_options(uri: str) -> tuple[str, dict]:
+    """
+    Com `neo4j+s://` o driver valida o certificado do Aura contra as CAs do
+    sistema. No Windows esse repositório só recebe raízes novas sob demanda, e o
+    Python não dispara esse download: o certificado do Aura (raiz "SSL.com TLS
+    RSA Root CA 2022") falhava com "self-signed certificate in certificate chain"
+    e a API não subia. Validamos então contra o bundle do certifi, que é o mesmo
+    em qualquer máquina. A conexão continua criptografada e verificada.
+    """
+    scheme, sep, rest = uri.partition("://")
+    if sep and scheme.endswith("+s"):
+        return f"{scheme[:-2]}://{rest}", {
+            "encrypted": True,
+            "trusted_certificates": TrustCustomCAs(certifi.where()),
+        }
+    return uri, {}
+
+
+_DRIVER_URI, _TLS_OPTIONS = _tls_options(NEO4J_URI)
+
 # O Aura (e a rede no caminho) derruba conexões paradas sem avisar. Sem estas
 # opções, o driver reaproveitava uma conexão morta do pool e a requisição falhava
 # com SessionExpired / "Unable to retrieve routing information".
@@ -21,11 +43,12 @@ if not all([NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD]):
 #  - max_connection_lifetime: descarta conexões com mais de 5 min, antes que o
 #    Aura as encerre por conta própria.
 driver = GraphDatabase.driver(
-    NEO4J_URI,
+    _DRIVER_URI,
     auth=(NEO4J_USERNAME, NEO4J_PASSWORD),
     liveness_check_timeout=30,
     max_connection_lifetime=300,
     keep_alive=True,
+    **_TLS_OPTIONS,
 )
 
 @contextmanager
