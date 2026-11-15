@@ -92,6 +92,10 @@ def compute_candidate_actions(tx, caso_id: str) -> list[dict]:
     base_result = network.run(case_id=caso_id, suspects=suspects, evidences=evidences)
     base_posteriors = [r.p_h_given_e for r in base_result.ranking]
     h_atual = shannon_entropy_bits(base_posteriors)
+    # O ranking sai ordenado por probabilidade, mas `suspects` segue a ordem de cadastro:
+    # cada suspeito precisa ser pareado com a PRÓPRIA probabilidade, pelo id.
+    posterior_por_id = {r.suspect.id: r.p_h_given_e for r in base_result.ranking}
+    suspects_com_posterior = [(s, posterior_por_id[s.id]) for s in suspects]
 
     candidates: list[dict] = []
 
@@ -183,7 +187,7 @@ def compute_candidate_actions(tx, caso_id: str) -> list[dict]:
     # ── Tipo D: dois suspeitos praticamente empatados no topo ───────
     # Recompensa = redução de entropia se uma evidência decisiva separasse
     # os dois (toda a massa dos dois ficaria com um só), em % de H atual.
-    ranked = sorted(zip(suspects, base_posteriors), key=lambda x: x[1], reverse=True)
+    ranked = sorted(suspects_com_posterior, key=lambda x: x[1], reverse=True)
     if len(ranked) >= 2 and h_atual > 0:
         (s1, p1), (s2, p2) = ranked[0], ranked[1]
         if (p1 - p2) * 100 <= TIE_MARGIN_PP:
@@ -212,7 +216,7 @@ def compute_candidate_actions(tx, caso_id: str) -> list[dict]:
         for s in suspects
     }
 
-    for suspect, posterior in zip(suspects, base_posteriors):
+    for suspect, posterior in suspects_com_posterior:
         if posterior <= 0:
             continue
 
