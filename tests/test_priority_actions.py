@@ -101,3 +101,45 @@ def test_catalog_covers_every_type_generated():
                      "Diferenciar", "SuspeitoSemEvidencia", "Suspeito"}
     for t in repo.action_type_catalog():
         assert all(t[k] for k in ("nome", "quandoAparece", "quandoSome", "recompensa", "esforco"))
+
+
+# ── Regressão: cada suspeito deve ser pareado com a PRÓPRIA probabilidade ──────────
+# O ranking sai ordenado por probabilidade; os suspeitos chegam na ordem de cadastro.
+# Quando as duas ordens diferem, as sugestões atribuíam a probabilidade de um suspeito a outro.
+
+def _ranking_ordem_diferente_do_cadastro():
+    """Suspeitos cadastrados como s1, s2, s3, mas com ranking s3 > s2 > s1 (s3 e s2 bem próximos)."""
+    from app.bayes.model import BayesianNetwork
+
+    suspects = [Suspect(id=f"s{i}", name=f"S{i}") for i in (1, 2, 3)]
+    evs = [
+        _ev("e1", "Coletada", 0.9, {"s3": 0.9}),
+        _ev("e2", "Coletada", 0.9, {"s3": 0.5}),
+        _ev("e3", "Coletada", 0.9, {"s2": 0.9}),
+        _ev("e4", "Coletada", 0.9, {"s2": 0.5}),
+        _ev("e5", "Coletada", 0.5, {"s1": 0.3}),
+    ]
+    ranking = BayesianNetwork().run(case_id="caso", suspects=suspects, evidences=evs).ranking
+    assert [r.suspect.id for r in ranking][0] != "s1"  # ordem do ranking difere da de cadastro
+    return suspects, evs, ranking
+
+
+def test_deepen_actions_use_each_suspects_own_probability(monkeypatch):
+    suspects, evs, ranking = _ranking_ordem_diferente_do_cadastro()
+    h = repo.shannon_entropy_bits([r.p_h_given_e for r in ranking])
+    esperado = {r.suspect.name: round(repo._h_term(r.p_h_given_e) / h * 100, 1) for r in ranking}
+
+    actions = _run(monkeypatch, suspects, evs)
+    obtido = {a["titulo"].removeprefix("Aprofundar investigação sobre "): a["recompensa"]
+              for a in actions if a["tipo"] == "Suspeito"}
+    assert obtido == esperado
+
+
+def test_tie_action_names_the_two_leaders_of_the_ranking(monkeypatch):
+    suspects, evs, ranking = _ranking_ordem_diferente_do_cadastro()
+    top1, top2 = ranking[0], ranking[1]
+    assert (top1.p_h_given_e - top2.p_h_given_e) * 100 <= repo.TIE_MARGIN_PP
+
+    actions = _run(monkeypatch, suspects, evs)
+    titulos = [a["titulo"] for a in actions if a["tipo"] == "Diferenciar"]
+    assert titulos == [f"Buscar evidência que diferencie {top1.suspect.name} de {top2.suspect.name}"]
