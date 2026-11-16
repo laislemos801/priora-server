@@ -26,13 +26,24 @@ from app.repositories.user_repository import (
     update_user_photo,
 )
 import bcrypt
+import os
 import secrets
 
 logger = logging.getLogger("priora.users")
 
 
 
-async def create_user_service(email, primeiro_nome, sobrenome, senha):
+def registration_code_ok(codigo):
+    """Senha de acesso ao cadastro (REGISTRATION_CODE). Sem a variável, o cadastro é aberto."""
+    esperado = os.getenv("REGISTRATION_CODE", "").strip()
+    if not esperado:
+        return True
+    return secrets.compare_digest((codigo or "").strip().encode(), esperado.encode())
+
+
+async def create_user_service(email, primeiro_nome, sobrenome, senha, codigo_acesso=None):
+    if not registration_code_ok(codigo_acesso):
+        raise HTTPException(status_code=403, detail="Senha de acesso incorreta. Peça a senha para a equipe do Priora.")
     senha_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
     exigir = verification_required()
     token = new_token() if exigir else None
