@@ -38,7 +38,8 @@ async def create_user(data: CreateUserRequest):
         data.email,
         data.primeiroNome,
         data.sobrenome,
-        data.senha
+        data.senha,
+        data.codigoAcesso,
     )
 
 @router.post("/verify-email")

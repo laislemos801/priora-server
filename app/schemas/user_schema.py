@@ -11,6 +11,7 @@ class CreateUserRequest(BaseModel):
     primeiroNome: str
     sobrenome: str
     senha: str
+    codigoAcesso: str | None = None
 
 
 class LoginRequest(BaseModel):
