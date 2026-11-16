@@ -156,6 +156,7 @@ def login_user_service(email, senha):
 
         del user["senhaHash"]
         user.pop("emailVerificado", None)
+        user["podeCriarCaso"] = user.get("podeCriarCaso") is not False
 
         return {
             "user": user,
@@ -227,6 +228,8 @@ def get_current_user_service(token):
             status_code=404,
             detail="Usuário não encontrado"
         )
+
+    user["podeCriarCaso"] = user.get("podeCriarCaso") is not False
 
     return user
 

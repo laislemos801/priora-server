@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 
 from app.database.neo4j import get_session
+from app.repositories.user_repository import can_create_case
 from app.core.authorization import require_case_role, READ_ROLES, WRITE_ROLES, OWNER_ROLES
 from app.services.uncertainty_evolution import aggregate_uncertainty_evolution
 from app.repositories.case_repository import (
@@ -19,6 +20,11 @@ def create_case_service(current_user_id: str, data):
     # o responsável pelo caso é sempre o usuário autenticado, nunca um
     # userId arbitrário enviado no corpo da requisição.
     with get_session() as tx:
+        if not can_create_case(tx, current_user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="A criação de casos está desativada para esta conta.",
+            )
         return create_case(tx, current_user_id, data)
 
 
