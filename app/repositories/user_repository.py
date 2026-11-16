@@ -68,6 +68,7 @@ def login_user(tx, email):
         .fotoUrl,
         .cargo,
         .emailVerificado,
+        .podeCriarCaso,
         .senhaHash
     } AS user
     """
@@ -130,7 +131,8 @@ def get_user_by_id(tx, user_id):
         .primeiroNome,
         .sobrenome,
         .fotoUrl,
-        .cargo
+        .cargo,
+        .podeCriarCaso
     } AS user,
 
     size(casos) AS totalCasos,
@@ -255,3 +257,16 @@ def update_user_photo(tx, user_id, foto_base64):
     record = result.single()
 
     return record["user"] if record else None
+
+
+def can_create_case(tx, user_id):
+    """
+    Contas marcadas com `podeCriarCaso = false` (ex.: conta de convidado) não criam casos.
+    Contas antigas não têm a propriedade; só o valor `false` bloqueia.
+    """
+    query = """
+    MATCH (u:Usuario {id: $user_id})
+    RETURN u.podeCriarCaso AS podeCriarCaso
+    """
+    record = tx.run(query, user_id=user_id).single()
+    return not (record and record["podeCriarCaso"] is False)
